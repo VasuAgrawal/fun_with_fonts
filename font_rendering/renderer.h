@@ -8,6 +8,9 @@
 #include <opencv2/core.hpp>
 
 class Renderer {
+
+  static constexpr size_t RELOAD_COUNT = 1000;
+
   static constexpr int DPI = 110;
   static constexpr int POINT = 72;
   static constexpr int EM = POINT * DPI / 72;
@@ -28,10 +31,8 @@ class Renderer {
 
  public:
   Renderer() {
-    if (const auto error = FT_Init_FreeType(&library_)) {
-      throw std::runtime_error(
-          fmt::format("Failed to initialize libfreetype2: {}", error));
-    }
+
+    reloadFreeType();
 
     auto dim = [this](int border, int padding, int count) {
       return 2 * padding + std::max(count - 1, 0) * border + count * EM;
@@ -53,13 +54,18 @@ class Renderer {
   Renderer& operator=(Renderer&& other) = default;
 
   std::optional<cv::Mat> renderAtlas() {
+
+    if (++render_count_ % RELOAD_COUNT == 0) {
+      reloadFreeType();
+      loadFontFace(face_name_, face_index_);
+    }
+
     if (!loaded_) {
       return std::nullopt;
     }
 
     std::memset(atlas_buffer_.get(), 0, atlas_buffer_size_);
     cv::Mat mat(atlas_height_, atlas_width_, CV_8UC1, atlas_buffer_.get());
-    // cv::Mat mat = cv::Mat::zeros(atlas_height_, atlas_width_, CV_8UC1);
 
     for (int row = 0; const auto& line : ATLAS) {
       const auto cy = ATLAS_PADDING + row * (EM + ATLAS_BORDER) + HALF_EM;
@@ -131,6 +137,12 @@ class Renderer {
     loaded_ = true;
     loaded_ &= !FT_New_Face(library_, path.c_str(), index, &face_);
     loaded_ &= !FT_Set_Char_Size(face_, POINT * 64, 0, DPI, 0);
+
+    if (loaded_) {
+      face_name_ = path;
+      face_index_ = index;
+    }
+
     return loaded_;
   }
 
@@ -139,13 +151,26 @@ class Renderer {
   const auto& getFontFace() { return face_; }
 
  private:
+  size_t render_count_ = 0;
   FT_Library library_ = nullptr;
   FT_Face face_ = nullptr;
+  std::string face_name_;
+  int face_index_;
   bool loaded_ = false;
   int atlas_width_ = 0;
   int atlas_height_ = 0;
   size_t atlas_buffer_size_ = 0;
   std::unique_ptr<uint8_t[]> atlas_buffer_ = nullptr;
+
+  void reloadFreeType() {
+    FT_Done_Face(face_);
+    FT_Done_FreeType(library_);
+
+    if (const auto error = FT_Init_FreeType(&library_)) {
+      throw std::runtime_error(
+          fmt::format("Failed to initialize libfreetype2: {}", error));
+    }
+  }
 
   static void drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
                          int start_y) {
