@@ -9,6 +9,7 @@ namespace fs = std::filesystem;
 #include <opencv2/highgui.hpp>
 
 DEFINE_string(font_dir, "", "Path to font directory");
+DEFINE_bool(errors_only, false, "Show only images with errors");
 
 inline static const std::vector<std::string> font_extensions{".otf", ".ttf"};
 
@@ -26,18 +27,25 @@ int main(int argc, char* argv[]) {
         std::find(font_extensions.begin(), font_extensions.end(),
                   p.path().extension()) != font_extensions.end()) {
       auto canonical = fs::canonical(p).string();
-      fmt::print("Loading font from: {}\n", canonical);
+      // fmt::print("Loading font from: {}\n", canonical);
       r.loadFontFace(canonical);
-      auto mat = r.renderAtlas();
+      auto [mat, err] = r.renderAtlas();
 
-      if (!mat) {
-        fmt::print("Unable to render font {}\n", canonical);
+      if (auto e = static_cast<int>(err); e) {
+        fmt::print("Issue while rendering font {}: {}\n", canonical, RendererErrorStrings[e]);
       } else {
-        cv::imshow("Rendered", mat.value());
+        if (FLAGS_errors_only) {
+          continue;
+        }
+      }
+
+      if (!mat.empty()) {
+        cv::imshow("Rendered", mat);
         if (cv::waitKey(0) == 'q') {
           break;
         }
       }
+
     }
   }
 }

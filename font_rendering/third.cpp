@@ -8,6 +8,7 @@ namespace fs = std::filesystem;
 
 #include <folly/ProducerConsumerQueue.h>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 
 #include <opencv2/highgui.hpp>
 
@@ -16,8 +17,9 @@ DEFINE_int32(count, 0, "Number of files to stop after");
 DEFINE_string(font_dir, "", "Path to font directory");
 DEFINE_string(output_dir, "", "Path to save output images");
 
+static const std::string ERROR_DIR = "errors";
 inline static const std::vector<std::string> font_extensions{
-  ".otf", ".ttf", ".svg", ".eot", ".woff", ".woff2"};
+    ".otf", ".ttf", ".svg", ".eot", ".woff", ".woff2"};
 static constexpr size_t QUEUE_SIZE = 10;
 
 int main(int argc, char* argv[]) {
@@ -29,6 +31,9 @@ int main(int argc, char* argv[]) {
     fmt::print("provide an output dir dipshit\n");
     return -1;
   }
+
+  FLAGS_log_dir = FLAGS_output_dir;
+  google::InitGoogleLogging(argv[0]);
 
   // Create the render queues
   std::vector<std::unique_ptr<folly::ProducerConsumerQueue<std::string>>>
@@ -42,6 +47,9 @@ int main(int argc, char* argv[]) {
 
   fs::path output_dir(FLAGS_output_dir);
   fs::create_directories(output_dir);
+  for (const auto& s : RendererErrorNames) {
+    fs::create_directories(output_dir / ERROR_DIR / s);
+  }
   std::atomic_bool new_work{true};
 
   // Create the renderer threads
@@ -63,21 +71,22 @@ int main(int argc, char* argv[]) {
           }
         }
 
-        if (!r.loadFontFace(canonical)) {
-          fmt::print("Unable to load font from: {}\n", canonical);
-          continue;
+        // Not checking error condition here since it's checked in render call
+        r.loadFontFace(canonical);
+        auto [mat, err] = r.renderAtlas();
+        auto output_filename = fs::path(canonical).stem().string() + ".png";
+        fs::path output_path;
+        if (auto e = static_cast<int>(err); e) {
+          LOG(WARNING) << fmt::format("Issue while rendering font {}: {}",
+                                      canonical, RendererErrorStrings[e]);
+          output_path = output_dir / ERROR_DIR / RendererErrorNames[e] / output_filename;
+        } else {
+          output_path = output_dir / output_filename;
         }
 
-        auto mat = r.renderAtlas();
-
-        if (!mat) {
-          fmt::print("Unable to render font {}\n", canonical);
-          continue;
+        if (!mat.empty()) {
+          cv::imwrite(output_path.string(), mat, compression_params);
         }
-
-        auto output = output_dir / (fs::path(canonical).stem().string() +
-                                    std::string(".png"));
-        cv::imwrite(output.string(), mat.value(), compression_params);
       }
     });
   }
@@ -97,7 +106,6 @@ int main(int argc, char* argv[]) {
 
     ++count;
 
-    // const auto canonical = fs::canonical(p).string();
     const auto canonical = p.path().string();
 
     // Use the count to pick a queue to add the path to. If that one's full,
@@ -127,4 +135,12 @@ int main(int argc, char* argv[]) {
       render_threads[i].join();
     }
   }
+
+  // Remove the empty error dirs
+  for (auto& p : fs::directory_iterator(output_dir / ERROR_DIR)) {
+    if (fs::is_directory(p.path()) && fs::is_empty(p.path())) {
+      LOG(INFO) << "Removing empty error folder " << p;
+      fs::remove(p.path());
+    }
+  }  
 }

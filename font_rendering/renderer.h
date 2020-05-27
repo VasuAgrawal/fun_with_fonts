@@ -1,14 +1,47 @@
 #include <fmt/format.h>
 #include <ft2build.h>
 
+#include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
-#include <optional>
+#include <tuple>
 #include FT_FREETYPE_H
 #include <opencv2/core.hpp>
+#include <opencv2/imgproc.hpp>
+
+enum class RendererError : size_t {
+  None = 0,
+  CharLoadFailed,
+  OutOfImageBounds,
+  OutOfCellBounds,
+  Overwrite,
+  Duplicate,
+  FontNotLoaded,
+  EmptyCharacter,
+};
+inline static const std::vector<std::string> RendererErrorNames {
+  "None",
+  "CharLoadFailed",
+  "OutOfImageBounds",
+  "OutOfCellBounds",
+  "Overwrite",
+  "Duplicate",
+  "FontNotLoaded",
+  "EmptyCharacter",
+};
+inline static const std::vector<std::string> RendererErrorStrings{
+    "none",
+    "could not load character from font face",
+    "tried to draw a character outside of image bounds",
+    "tried to draw a character outside of cell bounds",
+    "tried to overwrite existing drawn data",
+    "found a character that was an exact duplicate of another",
+    "font face isn't loaded",
+    "nothing rendered when drawing a character",
+};
 
 class Renderer {
-
   static constexpr size_t RELOAD_COUNT = 1000;
 
   static constexpr int DPI = 110;
@@ -18,20 +51,19 @@ class Renderer {
   static constexpr int ATLAS_BORDER = EM / 8;  // Border for each cell
   static constexpr int ATLAS_PADDING = std::max(EM / 2, ATLAS_BORDER);  // side
 
-  // static constexpr int ATLAS_WIDTH = 8;
-  // inline static const std::vector<std::string> ATLAS{
-  //     "ABCDEFGH", "IJKLMNOP", "QRSTUVWX", "YZabcdef",
-  //     "ghijklmn", "opqrstuv", "wxyz0123", "456789?!",
-  // };
-
-  static constexpr int ATLAS_WIDTH = 6;
+  static constexpr int ATLAS_WIDTH = 8;
   inline static const std::vector<std::string> ATLAS{
-      "ABCDEF", "GHIJKL", "MNOPQR", "STUVWX", "YZ0123", "456789",
+      "ABCDEFGH", "IJKLMNOP", "QRSTUVWX", "YZabcdef",
+      "ghijklmn", "opqrstuv", "wxyz0123", "456789?!",
   };
+
+  // static constexpr int ATLAS_WIDTH = 6;
+  // inline static const std::vector<std::string> ATLAS{
+  //     "ABCDEF", "GHIJKL", "MNOPQR", "STUVWX", "YZ0123", "456789",
+  // };
 
  public:
   Renderer() {
-
     reloadFreeType();
 
     auto dim = [this](int border, int padding, int count) {
@@ -53,32 +85,79 @@ class Renderer {
   Renderer& operator=(const Renderer& other) = delete;
   Renderer& operator=(Renderer&& other) = default;
 
-  std::optional<cv::Mat> renderAtlas() {
-
+  std::tuple<cv::Mat, RendererError> renderAtlas() {
     if (++render_count_ % RELOAD_COUNT == 0) {
       reloadFreeType();
       loadFontFace(face_name_, face_index_);
     }
 
     if (!loaded_) {
-      return std::nullopt;
+      return std::make_tuple<cv::Mat, RendererError>(
+          {}, RendererError::FontNotLoaded);
     }
 
     std::memset(atlas_buffer_.get(), 0, atlas_buffer_size_);
     cv::Mat mat(atlas_height_, atlas_width_, CV_8UC1, atlas_buffer_.get());
+    char_buffers_.clear();
+    char_buffer_sizes_.clear();
+
+    RendererError first_error = RendererError::None;
+    bool matched_buffer = false;
 
     for (int row = 0; const auto& line : ATLAS) {
       const auto cy = ATLAS_PADDING + row * (EM + ATLAS_BORDER) + HALF_EM;
+      const auto cell_top = cy - HALF_EM - ATLAS_BORDER;
+      const auto cell_bot = cy + HALF_EM + ATLAS_BORDER + 1;
 
       for (int col = 0; const auto& c : line) {
         if (FT_Load_Char(face_, c, FT_LOAD_RENDER)) {
-          return std::nullopt;
+          first_error = first_error == RendererError::None ? RendererError::CharLoadFailed : first_error;
+          continue;
+          // return std::make_tuple<cv::Mat, RendererError>(
+          //     {}, RendererError::CharLoadFailed);
         }
 
         auto slot = face_->glyph;
         auto& bitmap = slot->bitmap;
+
+        if (!matched_buffer) {
+          // Check if the character is a duplicate by doing memory comparison
+          const auto char_buffer_size = bitmap.rows * bitmap.width;
+          char_buffer_sizes_.push_back(char_buffer_size);
+          char_buffers_.push_back(
+              std::make_unique<uint8_t[]>(char_buffer_size));
+          auto& char_buffer = char_buffers_.back();
+          std::memcpy(char_buffer.get(), bitmap.buffer, char_buffer_size);
+
+          for (size_t i = 0; i < char_buffers_.size() - 1; ++i) {
+            // they need to have the same size to be comparable
+            auto cmp_size = char_buffer_sizes_[i];
+            if (cmp_size != char_buffer_size) {
+              continue;
+            }
+
+            if (!std::memcmp(char_buffers_[i].get(), char_buffer.get(),
+                             cmp_size)) {
+              matched_buffer = true;
+              // fmt::print("Matched buffer {} ({}) to buffer {} ({})\n",
+              //            char_buffers_.size() - 1, c, i,
+              //            ATLAS[i / ATLAS_WIDTH][i % ATLAS_WIDTH]);
+              first_error = first_error == RendererError::None
+                                ? RendererError::Duplicate
+                                : first_error;
+              break;
+            }
+          }
+        }
+
         const auto cx = ATLAS_PADDING + col * (EM + ATLAS_BORDER) + HALF_EM;
-        drawBitmap(mat, bitmap, cx - bitmap.width / 2, cy - bitmap.rows / 2);
+        const auto cell_left = cx - HALF_EM - ATLAS_BORDER;
+        const auto cell_right = cx + HALF_EM + ATLAS_BORDER + 1;
+        auto e =
+            drawBitmap(mat, bitmap, cx - bitmap.width / 2, cy - bitmap.rows / 2,
+                       cell_left, cell_top, cell_right, cell_bot);
+
+        first_error = first_error == RendererError::None ? e : first_error;
 
         ++col;
       }
@@ -86,51 +165,8 @@ class Renderer {
       ++row;
     }
 
-    return mat;
-  }
-
-  std::optional<cv::Mat> renderTestText() {
-    if (!loaded_) {
-      return std::nullopt;
-    }
-
-    // 50 pt at 100 dpi
-    if (FT_Set_Char_Size(face_, POINT * 64, 0, DPI, 0)) {
-      return std::nullopt;
-    }
-
-    cv::Mat mat = cv::Mat::zeros(1000, 2000, CV_8UC1);
-    std::string text = "The quick brown fox jumps over the lazy dog!";
-
-    int px = 100;
-    int py = 200;
-
-    for (const char c : text) {
-      if (FT_Load_Char(face_, c, FT_LOAD_RENDER)) {
-        return std::nullopt;
-      }
-
-      auto slot = face_->glyph;
-      auto& bitmap = slot->bitmap;
-
-      drawBitmap(mat, slot->bitmap, px + slot->bitmap_left,
-                 py - slot->bitmap_top);
-      drawBitmap(mat, slot->bitmap, px + slot->bitmap_left,
-                 100 + py - slot->bitmap_top);
-      drawBitmap(mat, slot->bitmap, px + slot->bitmap_left,
-                 200 + py - slot->bitmap_top);
-      drawBitmap(mat, slot->bitmap, px + slot->bitmap_left,
-                 300 + py - slot->bitmap_top);
-      drawBitmap(mat, slot->bitmap, px + slot->bitmap_left,
-                 400 + py - slot->bitmap_top);
-      drawBitmap(mat, slot->bitmap, px + slot->bitmap_left,
-                 500 + py - slot->bitmap_top);
-
-      px += slot->advance.x >> 6;
-      py += slot->advance.y >> 6;
-    }
-
-    return mat;
+    return std::make_tuple<cv::Mat, RendererError>(std::move(mat),
+                                                   std::move(first_error));
   }
 
   bool loadFontFace(const std::string& path, int index = 0) {
@@ -146,10 +182,6 @@ class Renderer {
     return loaded_;
   }
 
-  const auto& getLibrary() { return library_; }
-
-  const auto& getFontFace() { return face_; }
-
  private:
   size_t render_count_ = 0;
   FT_Library library_ = nullptr;
@@ -161,6 +193,8 @@ class Renderer {
   int atlas_height_ = 0;
   size_t atlas_buffer_size_ = 0;
   std::unique_ptr<uint8_t[]> atlas_buffer_ = nullptr;
+  std::vector<std::unique_ptr<uint8_t[]>> char_buffers_;
+  std::vector<size_t> char_buffer_sizes_;
 
   void reloadFreeType() {
     FT_Done_Face(face_);
@@ -172,22 +206,71 @@ class Renderer {
     }
   }
 
-  static void drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
-                         int start_y) {
+  static RendererError drawBitmap(
+      cv::Mat& mat, FT_Bitmap& bitmap, int start_x, int start_y,
+      int cell_left = std::numeric_limits<int>::min(),
+      int cell_top = std::numeric_limits<int>::min(),
+      int cell_right = std::numeric_limits<int>::max(),
+      int cell_bot = std::numeric_limits<int>::max()) {
+    RendererError e = RendererError::None;
+    uint64_t write_count = 0;
+
+    bool draw_circle = false;
+    cv::Point circle;
+
     for (int y = 0; y < bitmap.rows; ++y) {
       auto draw_y = start_y + y;
       if (draw_y < 0 || draw_y >= mat.rows) {
+        e = e == RendererError::None ? RendererError::OutOfImageBounds : e;
         continue;
+        // } else if (draw_y < cell_top || draw_y >= cell_bot) {
+        //   e = e == RendererError::None ? RendererError::OutOfCellBounds : e;
       }
 
       for (int x = 0; x < bitmap.width; ++x) {
         auto draw_x = start_x + x;
         if (draw_x < 0 || draw_x >= mat.cols) {
+          e = e == RendererError::None ? RendererError::OutOfImageBounds : e;
           continue;
+          // } else if (draw_x < cell_left || draw_x >= cell_right) {
+          //   e = e == RendererError::None ? RendererError::OutOfCellBounds :
+          //   e;
         }
 
-        mat.at<uint8_t>(draw_y, draw_x) |= bitmap.buffer[y * bitmap.width + x];
+        if (bitmap.buffer[y * bitmap.width + x]) {  // If we need to draw
+          if (mat.at<uint8_t>(draw_y, draw_x)) {  // and there's something there
+
+            if (!draw_circle) {
+              circle = cv::Point(draw_x, draw_y);
+              draw_circle = true;
+            }
+
+            e = e == RendererError::None ? RendererError::Overwrite : e;
+            // fmt::print("Overwriting at ({}, {}), old: {}, new: {}\n", draw_x,
+            // draw_y,
+            //     mat.at<uint8_t>(draw_y, draw_x), bitmap.buffer[y *
+            //     bitmap.width + x]
+            //     );
+          }
+
+          // This doesn't properly implement alpha blending, but since we flag
+          // when there's an overwite, there's no need to. Overwriting the
+          // default (black) value with this value is correctly blending.
+          mat.at<uint8_t>(draw_y, draw_x) = bitmap.buffer[y * bitmap.width + x];
+          ++write_count;
+        }
       }
     }
+
+    if (draw_circle) {
+      // cv::circle(mat, circle, 50, cv::Scalar(1), 15);
+      // cv::circle(mat, circle, 50, cv::Scalar(255), 5);
+    }
+
+    if (!write_count) {
+      e = e == RendererError::None ? RendererError::EmptyCharacter : e;
+    }
+
+    return e;
   }
 };
