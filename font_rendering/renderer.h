@@ -20,15 +20,9 @@ enum class RendererError : size_t {
   FontNotLoaded,
   EmptyCharacter,
 };
-inline static const std::vector<std::string> RendererErrorNames {
-  "None",
-  "CharLoadFailed",
-  "OutOfImageBounds",
-  "OutOfCellBounds",
-  "Overwrite",
-  "Duplicate",
-  "FontNotLoaded",
-  "EmptyCharacter",
+inline static const std::vector<std::string> RendererErrorNames{
+    "None",      "CharLoadFailed", "OutOfImageBounds", "OutOfCellBounds",
+    "Overwrite", "Duplicate",      "FontNotLoaded",    "EmptyCharacter",
 };
 inline static const std::vector<std::string> RendererErrorStrings{
     "none",
@@ -111,7 +105,9 @@ class Renderer {
 
       for (int col = 0; const auto& c : line) {
         if (FT_Load_Char(face_, c, FT_LOAD_RENDER)) {
-          first_error = first_error == RendererError::None ? RendererError::CharLoadFailed : first_error;
+          first_error = first_error == RendererError::None
+                            ? RendererError::CharLoadFailed
+                            : first_error;
           continue;
           // return std::make_tuple<cv::Mat, RendererError>(
           //     {}, RendererError::CharLoadFailed);
