@@ -14,7 +14,6 @@ find_package(OpenCV COMPONENTS core imgproc highgui REQUIRED)
 find_package(fmt REQUIRED)
 find_package(gflags REQUIRED)
 find_package(benchmark REQUIRED)
-find_package(folly REQUIRED)
 find_library(GLOG_LIBRARIES glog REQUIRED)
 
 add_executable(StandaloneSentencesDemo src/standalone_sentences.cpp)
