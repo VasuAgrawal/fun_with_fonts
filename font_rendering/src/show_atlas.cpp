@@ -1,7 +1,7 @@
-#include "renderer.h"
-
 #include <filesystem>
 #include <iostream>
+
+#include "font_rendering/renderer.h"
 namespace fs = std::filesystem;
 
 #include <gflags/gflags.h>
@@ -32,7 +32,8 @@ int main(int argc, char* argv[]) {
       auto [mat, err] = r.renderAtlas();
 
       if (auto e = static_cast<int>(err); e) {
-        fmt::print("Issue while rendering font {}: {}\n", canonical, RendererErrorStrings[e]);
+        fmt::print("Issue while rendering font {}: {}\n", canonical,
+                   RendererErrorStrings[e]);
       } else {
         if (FLAGS_errors_only) {
           continue;
@@ -45,7 +46,6 @@ int main(int argc, char* argv[]) {
           break;
         }
       }
-
     }
   }
 }

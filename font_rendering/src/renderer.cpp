@@ -1,63 +1,6 @@
-#include <fmt/format.h>
-#include <ft2build.h>
+#include "font_rendering/renderer.h"
 
-#include <cstdint>
-#include <cstring>
-#include <limits>
-#include <memory>
-#include <tuple>
-#include FT_FREETYPE_H
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
-
-enum class RendererError : size_t {
-  None = 0,
-  CharLoadFailed,
-  OutOfImageBounds,
-  OutOfCellBounds,
-  Overwrite,
-  Duplicate,
-  FontNotLoaded,
-  EmptyCharacter,
-};
-inline static const std::vector<std::string> RendererErrorNames{
-    "None",      "CharLoadFailed", "OutOfImageBounds", "OutOfCellBounds",
-    "Overwrite", "Duplicate",      "FontNotLoaded",    "EmptyCharacter",
-};
-inline static const std::vector<std::string> RendererErrorStrings{
-    "none",
-    "could not load character from font face",
-    "tried to draw a character outside of image bounds",
-    "tried to draw a character outside of cell bounds",
-    "tried to overwrite existing drawn data",
-    "found a character that was an exact duplicate of another",
-    "font face isn't loaded",
-    "nothing rendered when drawing a character",
-};
-
-class Renderer {
-  static constexpr size_t RELOAD_COUNT = 1000;
-
-  static constexpr int DPI = 110;
-  static constexpr int POINT = 72;
-  static constexpr int EM = POINT * DPI / 72;
-  static constexpr int HALF_EM = EM / 2;
-  static constexpr int ATLAS_BORDER = EM / 8;  // Border for each cell
-  static constexpr int ATLAS_PADDING = std::max(EM / 2, ATLAS_BORDER);  // side
-
-  static constexpr int ATLAS_WIDTH = 8;
-  inline static const std::vector<std::string> ATLAS{
-      "ABCDEFGH", "IJKLMNOP", "QRSTUVWX", "YZabcdef",
-      "ghijklmn", "opqrstuv", "wxyz0123", "456789?!",
-  };
-
-  // static constexpr int ATLAS_WIDTH = 6;
-  // inline static const std::vector<std::string> ATLAS{
-  //     "ABCDEF", "GHIJKL", "MNOPQR", "STUVWX", "YZ0123", "456789",
-  // };
-
- public:
-  Renderer() {
+Renderer::Renderer() {
     reloadFreeType();
 
     auto dim = [this](int border, int padding, int count) {
@@ -69,17 +12,12 @@ class Renderer {
     atlas_buffer_ = std::make_unique<uint8_t[]>(atlas_buffer_size_);
   }
 
-  ~Renderer() {
+Renderer::~Renderer() {
     FT_Done_Face(face_);
     FT_Done_FreeType(library_);
   }
 
-  Renderer(const Renderer& other) = delete;
-  Renderer(Renderer&& other) = default;
-  Renderer& operator=(const Renderer& other) = delete;
-  Renderer& operator=(Renderer&& other) = default;
-
-  std::tuple<cv::Mat, RendererError> renderAtlas() {
+std::tuple<cv::Mat, RendererError> Renderer::renderAtlas() {
     if (++render_count_ % RELOAD_COUNT == 0) {
       reloadFreeType();
       loadFontFace(face_name_, face_index_);
@@ -165,7 +103,7 @@ class Renderer {
                                                    std::move(first_error));
   }
 
-  bool loadFontFace(const std::string& path, int index = 0) {
+bool Renderer::loadFontFace(const std::string& path, int index) {
     loaded_ = true;
     loaded_ &= !FT_New_Face(library_, path.c_str(), index, &face_);
     loaded_ &= !FT_Set_Char_Size(face_, POINT * 64, 0, DPI, 0);
@@ -178,21 +116,7 @@ class Renderer {
     return loaded_;
   }
 
- private:
-  size_t render_count_ = 0;
-  FT_Library library_ = nullptr;
-  FT_Face face_ = nullptr;
-  std::string face_name_;
-  int face_index_;
-  bool loaded_ = false;
-  int atlas_width_ = 0;
-  int atlas_height_ = 0;
-  size_t atlas_buffer_size_ = 0;
-  std::unique_ptr<uint8_t[]> atlas_buffer_ = nullptr;
-  std::vector<std::unique_ptr<uint8_t[]>> char_buffers_;
-  std::vector<size_t> char_buffer_sizes_;
-
-  void reloadFreeType() {
+void Renderer::reloadFreeType() {
     FT_Done_Face(face_);
     FT_Done_FreeType(library_);
 
@@ -202,12 +126,12 @@ class Renderer {
     }
   }
 
-  static RendererError drawBitmap(
+RendererError Renderer::drawBitmap(
       cv::Mat& mat, FT_Bitmap& bitmap, int start_x, int start_y,
-      int cell_left = std::numeric_limits<int>::min(),
-      int cell_top = std::numeric_limits<int>::min(),
-      int cell_right = std::numeric_limits<int>::max(),
-      int cell_bot = std::numeric_limits<int>::max()) {
+      int cell_left,
+      int cell_top,
+      int cell_right,
+      int cell_bot) {
     RendererError e = RendererError::None;
     uint64_t write_count = 0;
 
@@ -269,4 +193,3 @@ class Renderer {
 
     return e;
   }
-};

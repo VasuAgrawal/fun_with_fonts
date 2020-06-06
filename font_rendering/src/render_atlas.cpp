@@ -3,7 +3,7 @@
 #include <filesystem>
 #include <thread>
 
-#include "renderer.h"
+#include "font_rendering/renderer.h"
 namespace fs = std::filesystem;
 
 #include <folly/ProducerConsumerQueue.h>

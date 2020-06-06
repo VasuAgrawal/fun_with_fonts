@@ -67,11 +67,11 @@ int main(int argc, char* argv[]) {
       CHECK_FT(FT_Load_Char(face, c, FT_LOAD_RENDER), "load char");
 
       auto slot = face->glyph;
-      fmt::print("{} bitmap left: {}, top: {}\n", c, slot->bitmap_left,
-                 slot->bitmap_top);
+      // fmt::print("{} bitmap left: {}, top: {}\n", c, slot->bitmap_left,
+      //            slot->bitmap_top);
       auto& bitmap = slot->bitmap;
-      fmt::print("{} bitmap rows: {}, bitmap width: {}\n", c, bitmap.rows,
-                 bitmap.width);
+      // fmt::print("{} bitmap rows: {}, bitmap width: {}\n", c, bitmap.rows,
+      //            bitmap.width);
 
       drawBitmap(mat, slot->bitmap, px + slot->bitmap_left,
                  py - slot->bitmap_top);
@@ -86,8 +86,8 @@ int main(int argc, char* argv[]) {
       drawBitmap(mat, slot->bitmap, px + slot->bitmap_left,
                  500 + py - slot->bitmap_top);
 
-      fmt::print("advancing x by {}, y by {}\n", slot->advance.x,
-                 slot->advance.y);
+      // fmt::print("advancing x by {}, y by {}\n", slot->advance.x,
+      //            slot->advance.y);
       px += slot->advance.x >> 6;
       py += slot->advance.y >> 6;
     }
