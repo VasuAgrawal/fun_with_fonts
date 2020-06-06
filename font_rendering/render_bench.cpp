@@ -13,7 +13,7 @@ BENCHMARK(BM_FT2_Init);
 static void BM_LoadFontFace(benchmark::State& state) {
   Renderer r;
   for (auto _ : state) {
-    r.loadFontFace("/zfs/home/vasu/Documents/projects/fun_with_fonts/ttf/pepperlandexpand.ttf");
+    r.loadFontFace("/data/fun_with_fonts/font_rendering/test_fonts/ttf/0000000.ttf");
   }
 }
 BENCHMARK(BM_LoadFontFace);
@@ -21,9 +21,10 @@ BENCHMARK(BM_LoadFontFace);
 
 static void BM_RenderAtlas(benchmark::State& state) {
   Renderer r;
-  r.loadFontFace("/zfs/home/vasu/Documents/projects/fun_with_fonts/ttf/pepperlandexpand.ttf");
+  r.loadFontFace("/data/fun_with_fonts/font_rendering/test_fonts/ttf/0000000.ttf");
   for (auto _ : state) {
-    benchmark::DoNotOptimize(r.renderAtlas());
+    auto [mat, err] = r.renderAtlas();
+    benchmark::DoNotOptimize(mat);
   }
 }
 BENCHMARK(BM_RenderAtlas);
