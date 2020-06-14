@@ -44,6 +44,46 @@ enum class ImageWriteStyle : uint8_t {
   COUNT,      // Number of ImageWriteStyle
 };
 
+inline static const std::vector<std::string> DEFAULT_ATLAS {
+    // "ABCDEFGH", "IJKLMNOP", "QRSTUVWX", "YZabcdef",
+    // "ghijklmn", "opqrstuv", "wxyz0123", "456789?!",
+    "dicks",
+};
+// inline static const std::vector<std::string> ATLAS{
+//     "ABCDEF", "GHIJKL", "MNOPQR", "STUVWX", "YZ0123", "456789",
+// };
+
+class FtPtr {
+  public:
+    FtPtr() = default;
+    FtPtr(FT_Library library) : ptr_(library) {}
+    
+    FtPtr(const FtPtr& other) = delete; // Not a shard ptr
+    FtPtr(FtPtr&& other) {
+      ptr_ = other.ptr_;
+      other.ptr_ = nullptr;
+    }
+
+    FtPtr& operator=(const FtPtr& other) = delete;
+    FtPtr& operator=(FtPtr& other) {
+      FT_Done_FreeType(ptr_);
+      ptr_ = other.ptr_;
+      other.ptr_ = nullptr;
+      return *this;
+    }
+
+    ~FtPtr() {
+      FT_Done_FreeType(ptr_);
+    }
+
+    operator FT_Library() const {
+      return ptr_;
+    }
+     
+  private:
+    FT_Library ptr_ = nullptr;
+};
+
 class Renderer {
   static constexpr size_t RELOAD_COUNT = 1000;
 
@@ -54,25 +94,15 @@ class Renderer {
   static constexpr int ATLAS_BORDER = EM / 8;  // Border for each cell
   static constexpr int ATLAS_PADDING = std::max(EM / 2, ATLAS_BORDER);  // side
 
-  static constexpr int ATLAS_WIDTH = 8;
-  inline static const std::vector<std::string> ATLAS{
-      "ABCDEFGH", "IJKLMNOP", "QRSTUVWX", "YZabcdef",
-      "ghijklmn", "opqrstuv", "wxyz0123", "456789?!",
-  };
-
-  // static constexpr int ATLAS_WIDTH = 6;
-  // inline static const std::vector<std::string> ATLAS{
-  //     "ABCDEF", "GHIJKL", "MNOPQR", "STUVWX", "YZ0123", "456789",
-  // };
-
  public:
   Renderer();
+  explicit Renderer(const std::vector<std::string>& user_atlas);
   ~Renderer();
 
   Renderer(const Renderer& other) = delete;
-  Renderer(Renderer&& other) = default;
+  Renderer(Renderer&& other) = delete;
   Renderer& operator=(const Renderer& other) = delete;
-  Renderer& operator=(Renderer&& other) = default;
+  Renderer& operator=(Renderer&& other);
 
   std::tuple<cv::Mat, RendererError> renderAtlas();
   bool loadFontFace(const std::string& path, int index = 0);
@@ -82,6 +112,9 @@ class Renderer {
       const cv::Mat& mat, ImageWriteStyle style);
 
  private:
+  std::vector<std::string> user_atlas_;
+  size_t user_atlas_width_ = 0;
+
   size_t render_count_ = 0;
   FT_Library library_ = nullptr;
   FT_Face face_ = nullptr;

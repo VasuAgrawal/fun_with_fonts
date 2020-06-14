@@ -9,14 +9,22 @@
 #include <opencv2/imgproc.hpp>
 #include <type_traits>
 
-Renderer::Renderer() {
+Renderer::Renderer() : Renderer(DEFAULT_ATLAS) {};
+
+Renderer::Renderer(const std::vector<std::string>& user_atlas) : user_atlas_(user_atlas) {
+  for (const auto& line : user_atlas_) {
+    user_atlas_width_ = std::max(user_atlas_width_, line.size());
+    fmt::print("{}\n", line);
+  }
+
+
   reloadFreeType();
 
   auto dim = [this](int border, int padding, int count) {
     return 2 * padding + std::max(count - 1, 0) * border + count * EM;
   };
-  atlas_width_ = dim(ATLAS_BORDER, ATLAS_PADDING, ATLAS_WIDTH);
-  atlas_height_ = dim(ATLAS_BORDER, ATLAS_PADDING, ATLAS.size());
+  atlas_width_ = dim(ATLAS_BORDER, ATLAS_PADDING, user_atlas_width_);
+  atlas_height_ = dim(ATLAS_BORDER, ATLAS_PADDING, user_atlas_.size());
   atlas_buffer_size_ = atlas_width_ * atlas_height_;
   atlas_buffer_ = std::make_unique<uint8_t[]>(atlas_buffer_size_);
 }
@@ -24,6 +32,32 @@ Renderer::Renderer() {
 Renderer::~Renderer() {
   FT_Done_Face(face_);
   FT_Done_FreeType(library_);
+}
+
+Renderer& Renderer::operator=(Renderer&& other) {
+  user_atlas_ = std::move(other.user_atlas_);
+  user_atlas_width_ = other.user_atlas_width_;
+  render_count_ = other.render_count_;
+
+  FT_Done_FreeType(library_);
+  library_ = other.library_;
+  other.library_ = nullptr;
+  
+  FT_Done_Face(face_);
+  face_ = other.face_;
+  other.face_ = nullptr;
+
+  face_name_ = std::move(other.face_name_);
+  face_index_ = other.face_index_;
+  loaded_ = other.loaded_;
+  atlas_width_ = other.atlas_width_;
+  atlas_height_ = other.atlas_height_;
+  atlas_buffer_size_ = other.atlas_buffer_size_;
+  atlas_buffer_ = std::move(other.atlas_buffer_);
+  char_buffers_ = std::move(other.char_buffers_);
+  char_buffer_sizes_ = std::move(char_buffer_sizes_);
+
+  return *this;
 }
 
 std::tuple<cv::Mat, RendererError> Renderer::renderAtlas() {
@@ -45,7 +79,7 @@ std::tuple<cv::Mat, RendererError> Renderer::renderAtlas() {
   RendererError first_error = RendererError::None;
   bool matched_buffer = false;
 
-  for (int row = 0; const auto& line : ATLAS) {
+  for (int row = 0; const auto& line : user_atlas_) {
     const auto cy = ATLAS_PADDING + row * (EM + ATLAS_BORDER) + HALF_EM;
     const auto cell_top = cy - HALF_EM - ATLAS_BORDER;
     const auto cell_bot = cy + HALF_EM + ATLAS_BORDER + 1;
@@ -95,8 +129,17 @@ std::tuple<cv::Mat, RendererError> Renderer::renderAtlas() {
       const auto cx = ATLAS_PADDING + col * (EM + ATLAS_BORDER) + HALF_EM;
       const auto cell_left = cx - HALF_EM - ATLAS_BORDER;
       const auto cell_right = cx + HALF_EM + ATLAS_BORDER + 1;
+
+      // const auto px = cx - bitmap.width / 2;
+      // const auto py = cy - bitmap.rows / 2;
+
+      const auto px = cx - ((slot->advance.x >> 6) - slot->bitmap_left) / 2;
+      // const auto px = cx - bitmap.width / 2;
+      const auto py = cy + HALF_EM - slot->bitmap_top;
+      // fmt::print("Character {} width {} left {} advance x {}, height {}  top {} advance y {}\n",
+      //     c, bitmap.width, slot->bitmap_left, slot->advance.x >> 6, bitmap.rows, slot->bitmap_top, slot->advance.y >> 6);
       auto e =
-          drawBitmap(mat, bitmap, cx - bitmap.width / 2, cy - bitmap.rows / 2,
+          drawBitmap(mat, bitmap, px, py,
                      cell_left, cell_top, cell_right, cell_bot);
 
       first_error = first_error == RendererError::None ? e : first_error;
@@ -190,6 +233,9 @@ RendererError Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
 
   bool draw_circle = false;
   cv::Point circle;
+
+  cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right, cell_bot),
+      cv::Scalar(255), 2);
 
   for (int y = 0; y < bitmap.rows; ++y) {
     auto draw_y = start_y + y;

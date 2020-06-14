@@ -14,7 +14,7 @@ std::string FONT_PATH =
 static void FT2_Init(benchmark::State& state) {
   for (auto _ : state) {
     Renderer r;
-    benchmark::DoNotOptimize(r);
+    // benchmark::DoNotOptimize(r);
   }
 }
 BENCHMARK(FT2_Init);

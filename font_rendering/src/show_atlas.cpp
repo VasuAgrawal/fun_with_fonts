@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <iostream>
+#include <sstream>
 
 #include "font_rendering/renderer.h"
 namespace fs = std::filesystem;
@@ -11,6 +12,7 @@ namespace fs = std::filesystem;
 
 DEFINE_string(font_dir, "", "Path to font directory");
 DEFINE_bool(errors_only, false, "Show only images with errors");
+DEFINE_string(atlas, "", "Override atlas");
 
 inline static const std::vector<std::string> font_extensions{".otf", ".ttf"};
 
@@ -20,8 +22,19 @@ int main(int argc, char* argv[]) {
     fmt::print("provide a font dir dipshit\n");
     return -1;
   }
-
+ 
   Renderer r;
+
+  if (FLAGS_atlas != "") {
+    std::vector<std::string> user_atlas;
+    std::istringstream stream(FLAGS_atlas);
+    std::string line;
+    while (std::getline(stream, line, '\n')) {
+      user_atlas.push_back(line);
+    }
+ 
+    r = Renderer(user_atlas);
+  }
 
   for (auto& p : fs::recursive_directory_iterator(FLAGS_font_dir)) {
     if (fs::is_regular_file(p) &&
