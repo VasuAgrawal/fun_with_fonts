@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgcodecs.hpp>
+#include <fmt/format.h>
 
 #include "font_rendering/renderer.h"
 namespace fs = std::filesystem;
@@ -35,6 +36,19 @@ static void RenderAtlas(benchmark::State& state) {
   }
 }
 BENCHMARK(RenderAtlas);
+
+static void RenderAndWriteAtlas(benchmark::State& state) {
+  Renderer r;
+  r.loadFontFace(FONT_PATH);
+  const auto output_dirname = fs::temp_directory_path();
+  const std::string output_filename = "foo";
+  for (auto _ : state) {
+    auto [mat, err] = r.renderAtlas();
+    r.saveImage(output_dirname, output_filename, mat,
+        static_cast<ImageWriteStyle>(state.range(0)));
+  }
+}
+BENCHMARK(RenderAndWriteAtlas)->DenseRange(0, 3, 1);
 
 class ImageWriteFixture : public benchmark::Fixture {
  public:

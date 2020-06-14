@@ -4,6 +4,7 @@
 #include "font_rendering/renderer.h"
 namespace fs = std::filesystem;
 
+#include <fmt/format.h>
 #include <gflags/gflags.h>
 
 #include <opencv2/highgui.hpp>

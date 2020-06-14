@@ -1,6 +1,5 @@
 #include <atomic>
 #include <chrono>
-#include <filesystem>
 #include <thread>
 
 #include "font_rendering/renderer.h"
@@ -9,6 +8,7 @@ namespace fs = std::filesystem;
 #include <folly/ProducerConsumerQueue.h>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <fmt/format.h>
 
 #include <opencv2/highgui.hpp>
 
@@ -16,6 +16,7 @@ DEFINE_int32(thread_count, 24, "Number of render threads to use");
 DEFINE_int32(count, 0, "Number of files to stop after");
 DEFINE_string(font_dir, "", "Path to font directory");
 DEFINE_string(output_dir, "", "Path to save output images");
+DEFINE_uint32(write_style, 0, "Image write style (0-3)");
 
 static const std::string ERROR_DIR = "errors";
 inline static const std::vector<std::string> font_extensions{
@@ -29,6 +30,11 @@ int main(int argc, char* argv[]) {
     return -1;
   } else if (FLAGS_output_dir == "") {
     fmt::print("provide an output dir dipshit\n");
+    return -1;
+  }
+
+  if (FLAGS_write_style >= static_cast<uint64_t>(ImageWriteStyle::COUNT)) {
+    fmt::print("Invalid write style {} specified\n", FLAGS_write_style);
     return -1;
   }
 
@@ -74,19 +80,16 @@ int main(int argc, char* argv[]) {
         // Not checking error condition here since it's checked in render call
         r.loadFontFace(canonical);
         auto [mat, err] = r.renderAtlas();
-        auto output_filename = fs::path(canonical).stem().string() + ".png";
-        fs::path output_path;
+
+        const auto output_basename = fs::path(canonical).stem().string();
+        fs::path output_dirname = output_dir;
         if (auto e = static_cast<int>(err); e) {
           LOG(WARNING) << fmt::format("Issue while rendering font {}: {}",
                                       canonical, RendererErrorStrings[e]);
-          output_path = output_dir / ERROR_DIR / RendererErrorNames[e] / output_filename;
-        } else {
-          output_path = output_dir / output_filename;
+          output_dirname = output_dirname / ERROR_DIR / RendererErrorNames[e];
         }
 
-        if (!mat.empty()) {
-          cv::imwrite(output_path.string(), mat, compression_params);
-        }
+        r.saveImage(output_dirname, output_basename, mat, static_cast<ImageWriteStyle>(FLAGS_write_style));
       }
     });
   }

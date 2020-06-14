@@ -1,16 +1,15 @@
 #pragma once
 
-#include <fmt/format.h>
 #include <ft2build.h>
 
-#include <cstdint>
-#include <cstring>
+#include <filesystem>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <tuple>
 #include FT_FREETYPE_H
+
 #include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
 
 enum class RendererError : size_t {
   None = 0,
@@ -35,6 +34,14 @@ inline static const std::vector<std::string> RendererErrorStrings{
     "found a character that was an exact duplicate of another",
     "font face isn't loaded",
     "nothing rendered when drawing a character",
+};
+
+enum class ImageWriteStyle : uint8_t {
+  Fastest = 0,  // Uses .pgm to dump bits to disk as fast as possible
+  Efficient,  // Uses LZ .tiff compression, gives most compression per unit time
+  Smaller,    // Uses RLE .png compression, which is a little smaller than .tiff
+  Smallest,   // Uses .webp compression, which is as small as I've gotten
+  COUNT,      // Number of ImageWriteStyle
 };
 
 class Renderer {
@@ -69,6 +76,10 @@ class Renderer {
 
   std::tuple<cv::Mat, RendererError> renderAtlas();
   bool loadFontFace(const std::string& path, int index = 0);
+  
+  static std::optional<std::filesystem::path> saveImage(
+      const std::filesystem::path& dirname, const std::string& basename,
+      const cv::Mat& mat, ImageWriteStyle style);
 
  private:
   size_t render_count_ = 0;
@@ -85,13 +96,11 @@ class Renderer {
   std::vector<size_t> char_buffer_sizes_;
 
   void reloadFreeType();
-  
+
   static RendererError drawBitmap(
       cv::Mat& mat, FT_Bitmap& bitmap, int start_x, int start_y,
       int cell_left = std::numeric_limits<int>::min(),
       int cell_top = std::numeric_limits<int>::min(),
       int cell_right = std::numeric_limits<int>::max(),
       int cell_bot = std::numeric_limits<int>::max());
-  
-
 };
