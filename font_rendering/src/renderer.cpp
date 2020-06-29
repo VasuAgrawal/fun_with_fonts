@@ -14,7 +14,7 @@ Renderer::Renderer() : Renderer(DEFAULT_ATLAS) {};
 Renderer::Renderer(const std::vector<std::string>& user_atlas) : user_atlas_(user_atlas) {
   for (const auto& line : user_atlas_) {
     user_atlas_width_ = std::max(user_atlas_width_, line.size());
-    fmt::print("{}\n", line);
+    // fmt::print("{}\n", line);
   }
 
 
@@ -31,7 +31,7 @@ Renderer::Renderer(const std::vector<std::string>& user_atlas) : user_atlas_(use
 
 Renderer::~Renderer() {
   FT_Done_Face(face_);
-  FT_Done_FreeType(library_);
+  // FT_Done_FreeType(library_);
 }
 
 Renderer& Renderer::operator=(Renderer&& other) {
@@ -39,9 +39,10 @@ Renderer& Renderer::operator=(Renderer&& other) {
   user_atlas_width_ = other.user_atlas_width_;
   render_count_ = other.render_count_;
 
-  FT_Done_FreeType(library_);
-  library_ = other.library_;
-  other.library_ = nullptr;
+  library_ = std::move(other.library_);
+  // FT_Done_FreeType(library_);
+  // library_ = other.library_;
+  // other.library_ = nullptr;
   
   FT_Done_Face(face_);
   face_ = other.face_;
@@ -217,12 +218,14 @@ std::optional<std::filesystem::path> Renderer::saveImage(
 
 void Renderer::reloadFreeType() {
   FT_Done_Face(face_);
-  FT_Done_FreeType(library_);
+  // FT_Done_FreeType(library_);
 
-  if (const auto error = FT_Init_FreeType(&library_)) {
+  FT_Library temp_library_;
+  if (const auto error = FT_Init_FreeType(&temp_library_)) {
     throw std::runtime_error(
         fmt::format("Failed to initialize libfreetype2: {}", error));
   }
+  library_ = temp_library_;
 }
 
 RendererError Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
@@ -234,8 +237,8 @@ RendererError Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
   bool draw_circle = false;
   cv::Point circle;
 
-  cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right, cell_bot),
-      cv::Scalar(255), 2);
+  // cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right, cell_bot),
+  //     cv::Scalar(255), 2);
 
   for (int y = 0; y < bitmap.rows; ++y) {
     auto draw_y = start_y + y;

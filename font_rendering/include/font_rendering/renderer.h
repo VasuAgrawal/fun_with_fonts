@@ -45,13 +45,9 @@ enum class ImageWriteStyle : uint8_t {
 };
 
 inline static const std::vector<std::string> DEFAULT_ATLAS {
-    // "ABCDEFGH", "IJKLMNOP", "QRSTUVWX", "YZabcdef",
-    // "ghijklmn", "opqrstuv", "wxyz0123", "456789?!",
-    "dicks",
+    "ABCDEFGH", "IJKLMNOP", "QRSTUVWX", "YZabcdef",
+    "ghijklmn", "opqrstuv", "wxyz0123", "456789?!",
 };
-// inline static const std::vector<std::string> ATLAS{
-//     "ABCDEF", "GHIJKL", "MNOPQR", "STUVWX", "YZ0123", "456789",
-// };
 
 class FtPtr {
   public:
@@ -65,7 +61,7 @@ class FtPtr {
     }
 
     FtPtr& operator=(const FtPtr& other) = delete;
-    FtPtr& operator=(FtPtr& other) {
+    FtPtr& operator=(FtPtr&& other) {
       FT_Done_FreeType(ptr_);
       ptr_ = other.ptr_;
       other.ptr_ = nullptr;
@@ -116,7 +112,7 @@ class Renderer {
   size_t user_atlas_width_ = 0;
 
   size_t render_count_ = 0;
-  FT_Library library_ = nullptr;
+  FtPtr library_ = nullptr;
   FT_Face face_ = nullptr;
   std::string face_name_;
   int face_index_;

@@ -41,3 +41,12 @@ target_link_libraries(RenderAtlas PRIVATE Renderer ${GFLAGS_LIBRARIES}
 
 add_executable(RendererBenchmark test/render_bench.cpp)
 target_link_libraries(RendererBenchmark PRIVATE Renderer benchmark::benchmark)
+
+add_executable(ImageWriteBenchmark test/image_write.cpp)
+target_include_directories(ImageWriteBenchmark PRIVATE ${OpenCV_INCLUDE_DIRS}
+${GFLAGS_INCLUDE_DIRS}
+    )
+target_link_libraries(ImageWriteBenchmark PRIVATE ${OpenCV_LIBS} 
+fmt::fmt
+${GFLAGS_LIBRARIES}
+    benchmark::benchmark)
