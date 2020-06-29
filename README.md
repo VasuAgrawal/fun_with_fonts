@@ -36,3 +36,50 @@ Other font types can probably be supported. The reason we separate them by
 extension is because they'll override eachother otherwise, and there's slight
 differences in how a ttf vs otf are rendered (apparently) that I don't want to
 randomly introduce into the data.
+
+## Building 
+
+Install the dependencies:
+
+1. C++20 capable compiler
+1. [libfreetype](https://www.freetype.org/index.html)
+1. [opencv](https://docs.opencv.org/trunk/d7/d9f/tutorial_linux_install.html)
+1. [libfmt](https://fmt.dev/latest/usage.html)
+1. [gflags](https://gflags.github.io/gflags/#download)
+1. [google benchmark](https://github.com/google/benchmark#installation)
+
+Then, in standard `cmake` fashion:
+
+```
+cd font_rendering
+mkdir build
+cd build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel 48
+```
+
+## Benchmarking
+
+I wrote a couple of benchmarks to test performance.
+
+### Image Writing Benchmark
+
+This one's meant to evaluate different `cv::imwrite` parameter combinations to
+help determine an optimal point in the output size / compression time tradeoff.
+Try the following:
+
+```
+./build/ImageWriteBenchmark --image_path [image.png] --rgb_image=false
+```
+
+Note that all of the standard google benchmark flags are also supported (even if
+they're not listed). For example, to save the benchmarks:
+
+```
+./build/ImageWriteBenchmark --image_path [image.png] --rgb_image=false \
+    --benchmark_format=csv > imwrite_benchmarks.csv
+```
+
+### Font Renderer Benchmark
+
+Just how fast can I render things? Let's find some bottlenecks.
