@@ -5,10 +5,10 @@
 #include "font_rendering/renderer.h"
 namespace fs = std::filesystem;
 
+#include <fmt/format.h>
 #include <folly/ProducerConsumerQueue.h>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <fmt/format.h>
 
 #include <opencv2/highgui.hpp>
 
@@ -18,7 +18,7 @@ DEFINE_string(font_dir, "", "Path to font directory");
 DEFINE_string(output_dir, "", "Path to save output images");
 DEFINE_uint32(write_style, 0, "Image write style (0-3)");
 
-static const std::string ERROR_DIR = "errors";
+static const std::string ERROR_DIR_NAME = "errors";
 inline static const std::vector<std::string> font_extensions{
     ".otf", ".ttf", ".svg", ".eot", ".woff", ".woff2"};
 static constexpr size_t QUEUE_SIZE = 10;
@@ -53,8 +53,9 @@ int main(int argc, char* argv[]) {
 
   fs::path output_dir(FLAGS_output_dir);
   fs::create_directories(output_dir);
+  fs::path error_dir = output_dir / ERROR_DIR_NAME;
   for (const auto& s : RendererErrorNames) {
-    fs::create_directories(output_dir / ERROR_DIR / s);
+    fs::create_directories(output_dir / ERROR_DIR_NAME / s);
   }
   std::atomic_bool new_work{true};
 
@@ -86,10 +87,11 @@ int main(int argc, char* argv[]) {
         if (auto e = static_cast<int>(err); e) {
           LOG(WARNING) << fmt::format("Issue while rendering font {}: {}",
                                       canonical, RendererErrorStrings[e]);
-          output_dirname = output_dirname / ERROR_DIR / RendererErrorNames[e];
+          output_dirname = output_dirname / ERROR_DIR_NAME / RendererErrorNames[e];
         }
 
-        r.saveImage(output_dirname, output_basename, mat, static_cast<ImageWriteStyle>(FLAGS_write_style));
+        r.saveImage(output_dirname, output_basename, mat,
+                    static_cast<ImageWriteStyle>(FLAGS_write_style));
       }
     });
   }
@@ -140,10 +142,16 @@ int main(int argc, char* argv[]) {
   }
 
   // Remove the empty error dirs
-  for (auto& p : fs::directory_iterator(output_dir / ERROR_DIR)) {
+  for (auto& p : fs::directory_iterator(output_dir / ERROR_DIR_NAME)) {
     if (fs::is_directory(p.path()) && fs::is_empty(p.path())) {
       LOG(INFO) << "Removing empty error folder " << p;
       fs::remove(p.path());
     }
-  }  
+  }
+
+  // Remove error dir itself if empty
+  if (fs::is_directory(error_dir) && fs::is_empty(error_dir)) {
+    LOG(INFO) << "Removing empty error dir " << error_dir;
+    fs::remove(error_dir); 
+  }
 }

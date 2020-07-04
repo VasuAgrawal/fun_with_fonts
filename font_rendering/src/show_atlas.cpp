@@ -13,6 +13,7 @@ namespace fs = std::filesystem;
 DEFINE_string(font_dir, "", "Path to font directory");
 DEFINE_bool(errors_only, false, "Show only images with errors");
 DEFINE_string(atlas, "", "Override atlas");
+DEFINE_bool(cells, true, "Put each character in its own cell");
 
 inline static const std::vector<std::string> font_extensions{".otf", ".ttf"};
 
@@ -43,7 +44,7 @@ int main(int argc, char* argv[]) {
       auto canonical = fs::canonical(p).string();
       // fmt::print("Loading font from: {}\n", canonical);
       r.loadFontFace(canonical);
-      auto [mat, err] = r.renderAtlas();
+      auto [mat, err] = r.renderAtlas(FLAGS_cells);
 
       if (auto e = static_cast<int>(err); e) {
         fmt::print("Issue while rendering font {}: {}\n", canonical,

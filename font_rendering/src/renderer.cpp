@@ -14,7 +14,6 @@ Renderer::Renderer() : Renderer(DEFAULT_ATLAS) {};
 Renderer::Renderer(const std::vector<std::string>& user_atlas) : user_atlas_(user_atlas) {
   for (const auto& line : user_atlas_) {
     user_atlas_width_ = std::max(user_atlas_width_, line.size());
-    // fmt::print("{}\n", line);
   }
 
 
@@ -31,7 +30,6 @@ Renderer::Renderer(const std::vector<std::string>& user_atlas) : user_atlas_(use
 
 Renderer::~Renderer() {
   FT_Done_Face(face_);
-  // FT_Done_FreeType(library_);
 }
 
 Renderer& Renderer::operator=(Renderer&& other) {
@@ -40,9 +38,6 @@ Renderer& Renderer::operator=(Renderer&& other) {
   render_count_ = other.render_count_;
 
   library_ = std::move(other.library_);
-  // FT_Done_FreeType(library_);
-  // library_ = other.library_;
-  // other.library_ = nullptr;
   
   FT_Done_Face(face_);
   face_ = other.face_;
@@ -57,11 +52,12 @@ Renderer& Renderer::operator=(Renderer&& other) {
   atlas_buffer_ = std::move(other.atlas_buffer_);
   char_buffers_ = std::move(other.char_buffers_);
   char_buffer_sizes_ = std::move(char_buffer_sizes_);
+  char_buffer_symbols_ = std::move(char_buffer_symbols_);
 
   return *this;
 }
 
-std::tuple<cv::Mat, RendererError> Renderer::renderAtlas() {
+std::tuple<cv::Mat, RendererError> Renderer::renderAtlas(bool cells) {
   if (++render_count_ % RELOAD_COUNT == 0) {
     reloadFreeType();
     loadFontFace(face_name_, face_index_);
@@ -76,14 +72,24 @@ std::tuple<cv::Mat, RendererError> Renderer::renderAtlas() {
   cv::Mat mat(atlas_height_, atlas_width_, CV_8UC1, atlas_buffer_.get());
   char_buffers_.clear();
   char_buffer_sizes_.clear();
+  char_buffer_symbols_.clear();
 
   RendererError first_error = RendererError::None;
   bool matched_buffer = false;
+
+  // Continuous pen data, in case we don't want to draw each character in its
+  // individual cell (which is the default).
+  int cont_px = 0;
+  int cont_py = 0;
 
   for (int row = 0; const auto& line : user_atlas_) {
     const auto cy = ATLAS_PADDING + row * (EM + ATLAS_BORDER) + HALF_EM;
     const auto cell_top = cy - HALF_EM - ATLAS_BORDER;
     const auto cell_bot = cy + HALF_EM + ATLAS_BORDER + 1;
+
+    // Move the continuous pen to the middle of the bottom of the first cell
+    // every time there's a new row.
+    cont_py = cell_bot - ATLAS_BORDER;
 
     for (int col = 0; const auto& c : line) {
       if (FT_Load_Char(face_, c, FT_LOAD_RENDER)) {
@@ -98,11 +104,13 @@ std::tuple<cv::Mat, RendererError> Renderer::renderAtlas() {
       auto slot = face_->glyph;
       auto& bitmap = slot->bitmap;
 
-      if (!matched_buffer) {
+      // Skip the check for spaces.
+      if (c != ' ' && !matched_buffer) {
         // Check if the character is a duplicate by doing memory comparison
         const auto char_buffer_size = bitmap.rows * bitmap.width;
         char_buffer_sizes_.push_back(char_buffer_size);
         char_buffers_.push_back(std::make_unique<uint8_t[]>(char_buffer_size));
+        char_buffer_symbols_.push_back(c);
         auto& char_buffer = char_buffers_.back();
         std::memcpy(char_buffer.get(), bitmap.buffer, char_buffer_size);
 
@@ -113,12 +121,12 @@ std::tuple<cv::Mat, RendererError> Renderer::renderAtlas() {
             continue;
           }
 
-          if (!std::memcmp(char_buffers_[i].get(), char_buffer.get(),
+          if ((char_buffer_symbols_[i] != c) && 
+              !std::memcmp(char_buffers_[i].get(), char_buffer.get(),
                            cmp_size)) {
             matched_buffer = true;
             // fmt::print("Matched buffer {} ({}) to buffer {} ({})\n",
-            //            char_buffers_.size() - 1, c, i,
-            //            ATLAS[i / ATLAS_WIDTH][i % ATLAS_WIDTH]);
+            //            char_buffers_.size() - 1, c, i, char_buffer_symbols_[i]);
             first_error = first_error == RendererError::None
                               ? RendererError::Duplicate
                               : first_error;
@@ -131,19 +139,60 @@ std::tuple<cv::Mat, RendererError> Renderer::renderAtlas() {
       const auto cell_left = cx - HALF_EM - ATLAS_BORDER;
       const auto cell_right = cx + HALF_EM + ATLAS_BORDER + 1;
 
-      // const auto px = cx - bitmap.width / 2;
-      // const auto py = cy - bitmap.rows / 2;
+      // Again, move the pen to the start of the line for the new character.
+      // Bottom left corner of the cell, effectively.
+      if (col == 0) {
+        cont_px = cx - HALF_EM;
+      }
 
-      const auto px = cx - ((slot->advance.x >> 6) - slot->bitmap_left) / 2;
-      // const auto px = cx - bitmap.width / 2;
-      const auto py = cy + HALF_EM - slot->bitmap_top;
+      int px = 0;
+      int py = 0;
+
+      if (cells) {
+        // Each character should get rendered to its own cell.
+        
+        // Offset from the center of the cell by the bitmap size. This generally
+        // works, but makes things look "off" a bit when characters are supposed
+        // to overlap (e.g. with a long swish from Q).
+        // const auto px = cx - bitmap.width / 2;
+        // const auto py = cy - bitmap.rows / 2;
+        
+        // Instead, try to correct the X position based on the pen advance
+        // (which indicates where the next character should be start). We'll
+        // also try to adjust Y so that characters look like they're sitting on
+        // the line.
+        px = cx - ((slot->advance.x >> 6) - slot->bitmap_left) / 2;
+        py = cy + HALF_EM - slot->bitmap_top;
+      } else {
+        // Use the continuous pen, leaving no space between characters.
+        px = cont_px + slot->bitmap_left;
+        py = cont_py - slot->bitmap_top;
+      }
+
       // fmt::print("Character {} width {} left {} advance x {}, height {}  top {} advance y {}\n",
       //     c, bitmap.width, slot->bitmap_left, slot->advance.x >> 6, bitmap.rows, slot->bitmap_top, slot->advance.y >> 6);
       auto e =
           drawBitmap(mat, bitmap, px, py,
                      cell_left, cell_top, cell_right, cell_bot);
 
+
+      if (e == RendererError::EmptyCharacter) {
+        // Don't mark it as an error if we draw nothing for a space.
+        if (c == ' ') {
+          e = RendererError::None;
+        }
+
+        // We also want to wipe empty characters from the char buffers so that
+        // we don't match characters that shouldn't be matched.
+        // char_buffers_.pop_back();
+        // char_buffer_sizes_.pop_back();
+        // char_buffer_symbols_.pop_back();
+      }
+
       first_error = first_error == RendererError::None ? e : first_error;
+
+      cont_px += slot->advance.x >> 6;
+      cont_py += slot->advance.y >> 6;
 
       ++col;
     }
@@ -237,6 +286,7 @@ RendererError Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
   bool draw_circle = false;
   cv::Point circle;
 
+  // cv::circle(mat, cv::Point(start_x, start_y), 3, cv::Scalar(255), 1);
   // cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right, cell_bot),
   //     cv::Scalar(255), 2);
 
@@ -275,10 +325,14 @@ RendererError Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
           //     );
         }
 
-        // This doesn't properly implement alpha blending, but since we flag
-        // when there's an overwite, there's no need to. Overwriting the
-        // default (black) value with this value is correctly blending.
-        mat.at<uint8_t>(draw_y, draw_x) = bitmap.buffer[y * bitmap.width + x];
+        // Alpha blending, courtesy of equation on wikipedia.
+        // Note that I assume the color for the new 
+        const float dst_rgb = mat.at<uint8_t>(draw_y, draw_x) / 255.0f;
+        const float src_rgb = 255.0f; // white in mono
+        const float src_a = bitmap.buffer[y * bitmap.width + x] / 255.0f;
+        const uint8_t out_rgb = src_rgb * (1.0f * src_a + dst_rgb * (1.0f - src_a));
+        mat.at<uint8_t>(draw_y, draw_x) = out_rgb;
+
         ++write_count;
       }
     }

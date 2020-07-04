@@ -88,6 +88,7 @@ class Renderer {
   static constexpr int EM = POINT * DPI / 72;
   static constexpr int HALF_EM = EM / 2;
   static constexpr int ATLAS_BORDER = EM / 8;  // Border for each cell
+  // static constexpr int ATLAS_BORDER = 0;  // Border for each cell
   static constexpr int ATLAS_PADDING = std::max(EM / 2, ATLAS_BORDER);  // side
 
  public:
@@ -100,7 +101,7 @@ class Renderer {
   Renderer& operator=(const Renderer& other) = delete;
   Renderer& operator=(Renderer&& other);
 
-  std::tuple<cv::Mat, RendererError> renderAtlas();
+  std::tuple<cv::Mat, RendererError> renderAtlas(bool cells = true);
   bool loadFontFace(const std::string& path, int index = 0);
   
   static std::optional<std::filesystem::path> saveImage(
@@ -123,6 +124,7 @@ class Renderer {
   std::unique_ptr<uint8_t[]> atlas_buffer_ = nullptr;
   std::vector<std::unique_ptr<uint8_t[]>> char_buffers_;
   std::vector<size_t> char_buffer_sizes_;
+  std::vector<char> char_buffer_symbols_;
 
   void reloadFreeType();
 
