@@ -15,8 +15,6 @@ DEFINE_bool(errors_only, false, "Show only images with errors");
 DEFINE_string(atlas, "", "Override atlas");
 DEFINE_bool(cells, true, "Put each character in its own cell");
 
-inline static const std::vector<std::string> font_extensions{".otf", ".ttf"};
-
 int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
   if (FLAGS_font_dir == "") {
@@ -39,16 +37,14 @@ int main(int argc, char* argv[]) {
 
   for (auto& p : fs::recursive_directory_iterator(FLAGS_font_dir)) {
     if (fs::is_regular_file(p) &&
-        std::find(font_extensions.begin(), font_extensions.end(),
-                  p.path().extension()) != font_extensions.end()) {
+        std::find(KNOWN_FONT_EXTENSIONS.begin(), KNOWN_FONT_EXTENSIONS.end(),
+                  p.path().extension()) != KNOWN_FONT_EXTENSIONS.end()) {
       auto canonical = fs::canonical(p).string();
       // fmt::print("Loading font from: {}\n", canonical);
       r.loadFontFace(canonical);
       auto [mat, err] = r.renderAtlas(FLAGS_cells);
-
-      if (auto e = static_cast<int>(err); e) {
-        fmt::print("Issue while rendering font {}: {}\n", canonical,
-                   RendererErrorStrings[e]);
+      if (err) {
+        fmt::print("Issue while rendering font {}: {}\n", canonical, err);
       } else {
         if (FLAGS_errors_only) {
           continue;

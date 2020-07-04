@@ -15,6 +15,8 @@ find_package(fmt REQUIRED)
 find_package(gflags REQUIRED)
 find_package(benchmark REQUIRED)
 find_library(GLOG_LIBRARIES glog REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(Tesseract tesseract)
 
 add_executable(StandaloneSentencesDemo src/standalone_sentences.cpp)
 target_include_directories(
@@ -30,6 +32,10 @@ target_include_directories(Renderer PUBLIC include ${FREETYPE_INCLUDE_DIRS}
 target_link_libraries(Renderer PUBLIC ${FREETYPE_LIBRARIES} ${OpenCV_LIBS}
                                       fmt::fmt)
 
+add_executable(MoveBadFonts src/move_bad_fonts.cpp)
+target_include_directories(MoveBadFonts PRIVATE ${GFLAGS_INCLUDE_DIRS})
+target_link_libraries(MoveBadFonts PRIVATE Renderer ${GFLAGS_LIBRARIES})
+
 add_executable(ShowAtlas src/show_atlas.cpp)
 target_include_directories(ShowAtlas PRIVATE ${GFLAGS_INCLUDE_DIRS})
 target_link_libraries(ShowAtlas PRIVATE Renderer ${GFLAGS_LIBRARIES})
@@ -38,6 +44,16 @@ add_executable(RenderAtlas src/render_atlas.cpp)
 target_include_directories(RenderAtlas PRIVATE ${GFLAGS_INCLUDE_DIRS})
 target_link_libraries(RenderAtlas PRIVATE Renderer ${GFLAGS_LIBRARIES}
                                           ${GLOG_LIBRARIES})
+
+add_executable(OcrDemo src/ocr_demo.cpp)
+target_include_directories(OcrDemo PRIVATE 
+    ${GFLAGS_INCLUDE_DIRS}
+    ${Tesseract_INCLUDE_DIRS}
+    )
+target_link_libraries(OcrDemo PRIVATE Renderer
+    ${GFLAGS_LIBRARIES}
+    ${Tesseract_LIBRARIES}
+    )
 
 add_executable(RendererBenchmark test/render_bench.cpp)
 target_link_libraries(RendererBenchmark PRIVATE Renderer benchmark::benchmark)

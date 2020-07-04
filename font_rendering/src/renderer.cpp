@@ -57,15 +57,18 @@ Renderer& Renderer::operator=(Renderer&& other) {
   return *this;
 }
 
-std::tuple<cv::Mat, RendererError> Renderer::renderAtlas(bool cells) {
+std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells) {
+  RenderStats stats;
+
   if (++render_count_ % RELOAD_COUNT == 0) {
     reloadFreeType();
     loadFontFace(face_name_, face_index_);
   }
 
   if (!loaded_) {
-    return std::make_tuple<cv::Mat, RendererError>(
-        {}, RendererError::FontNotLoaded);
+    stats.font_not_loaded = true;
+    return std::make_tuple<cv::Mat, RenderStats>(
+        {}, std::move(stats));
   }
 
   std::memset(atlas_buffer_.get(), 0, atlas_buffer_size_);
@@ -74,8 +77,6 @@ std::tuple<cv::Mat, RendererError> Renderer::renderAtlas(bool cells) {
   char_buffer_sizes_.clear();
   char_buffer_symbols_.clear();
 
-  RendererError first_error = RendererError::None;
-  bool matched_buffer = false;
 
   // Continuous pen data, in case we don't want to draw each character in its
   // individual cell (which is the default).
@@ -93,19 +94,15 @@ std::tuple<cv::Mat, RendererError> Renderer::renderAtlas(bool cells) {
 
     for (int col = 0; const auto& c : line) {
       if (FT_Load_Char(face_, c, FT_LOAD_RENDER)) {
-        first_error = first_error == RendererError::None
-                          ? RendererError::CharLoadFailed
-                          : first_error;
+        stats.char_loads_failed.push_back(c);
         continue;
-        // return std::make_tuple<cv::Mat, RendererError>(
-        //     {}, RendererError::CharLoadFailed);
       }
 
       auto slot = face_->glyph;
       auto& bitmap = slot->bitmap;
 
       // Skip the check for spaces.
-      if (c != ' ' && !matched_buffer) {
+      if (c != ' ') {
         // Check if the character is a duplicate by doing memory comparison
         const auto char_buffer_size = bitmap.rows * bitmap.width;
         char_buffer_sizes_.push_back(char_buffer_size);
@@ -124,12 +121,9 @@ std::tuple<cv::Mat, RendererError> Renderer::renderAtlas(bool cells) {
           if ((char_buffer_symbols_[i] != c) && 
               !std::memcmp(char_buffers_[i].get(), char_buffer.get(),
                            cmp_size)) {
-            matched_buffer = true;
             // fmt::print("Matched buffer {} ({}) to buffer {} ({})\n",
             //            char_buffers_.size() - 1, c, i, char_buffer_symbols_[i]);
-            first_error = first_error == RendererError::None
-                              ? RendererError::Duplicate
-                              : first_error;
+            stats.matched_bitmaps.emplace_back(char_buffer_symbols_[i], c);
             break;
           }
         }
@@ -171,25 +165,20 @@ std::tuple<cv::Mat, RendererError> Renderer::renderAtlas(bool cells) {
 
       // fmt::print("Character {} width {} left {} advance x {}, height {}  top {} advance y {}\n",
       //     c, bitmap.width, slot->bitmap_left, slot->advance.x >> 6, bitmap.rows, slot->bitmap_top, slot->advance.y >> 6);
-      auto e =
-          drawBitmap(mat, bitmap, px, py,
+      auto new_stats = drawBitmap(mat, bitmap, px, py,
                      cell_left, cell_top, cell_right, cell_bot);
 
-
-      if (e == RendererError::EmptyCharacter) {
-        // Don't mark it as an error if we draw nothing for a space.
+      // Don't treat space as an empty character, but transfer over the rest of
+      // the rendering stats.
+      if (!new_stats.empty_characters.empty()) {
         if (c == ' ') {
-          e = RendererError::None;
+          new_stats.empty_characters.clear();
+        } else {
+          new_stats.empty_characters[0] = c;
         }
-
-        // We also want to wipe empty characters from the char buffers so that
-        // we don't match characters that shouldn't be matched.
-        // char_buffers_.pop_back();
-        // char_buffer_sizes_.pop_back();
-        // char_buffer_symbols_.pop_back();
       }
 
-      first_error = first_error == RendererError::None ? e : first_error;
+      stats.update(new_stats);
 
       cont_px += slot->advance.x >> 6;
       cont_py += slot->advance.y >> 6;
@@ -200,8 +189,8 @@ std::tuple<cv::Mat, RendererError> Renderer::renderAtlas(bool cells) {
     ++row;
   }
 
-  return std::make_tuple<cv::Mat, RendererError>(std::move(mat),
-                                                 std::move(first_error));
+  return std::make_tuple<cv::Mat, RenderStats>(std::move(mat),
+                                                 std::move(stats));
 }
 
 bool Renderer::loadFontFace(const std::string& path, int index) {
@@ -218,8 +207,8 @@ bool Renderer::loadFontFace(const std::string& path, int index) {
 }
 
 template <typename E>
-constexpr auto to_integral(E e) -> typename std::underlying_type<E>::type {
-  return static_cast<typename std::underlying_type<E>::type>(e);
+constexpr auto to_integral(E e) -> typename std::underlying_type_t<E> {
+  return static_cast<typename std::underlying_type_t<E>>(e);
 }
 
 std::optional<std::filesystem::path> Renderer::saveImage(
@@ -267,7 +256,6 @@ std::optional<std::filesystem::path> Renderer::saveImage(
 
 void Renderer::reloadFreeType() {
   FT_Done_Face(face_);
-  // FT_Done_FreeType(library_);
 
   FT_Library temp_library_;
   if (const auto error = FT_Init_FreeType(&temp_library_)) {
@@ -277,14 +265,11 @@ void Renderer::reloadFreeType() {
   library_ = temp_library_;
 }
 
-RendererError Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
+RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
                                    int start_y, int cell_left, int cell_top,
                                    int cell_right, int cell_bot) {
-  RendererError e = RendererError::None;
+  RenderStats stats;
   uint64_t write_count = 0;
-
-  bool draw_circle = false;
-  cv::Point circle;
 
   // cv::circle(mat, cv::Point(start_x, start_y), 3, cv::Scalar(255), 1);
   // cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right, cell_bot),
@@ -292,38 +277,24 @@ RendererError Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
 
   for (int y = 0; y < bitmap.rows; ++y) {
     auto draw_y = start_y + y;
+    stats.out_of_cell_bounds_count += (draw_y < cell_top) || (draw_y >= cell_bot);
     if (draw_y < 0 || draw_y >= mat.rows) {
-      e = e == RendererError::None ? RendererError::OutOfImageBounds : e;
+      ++stats.out_of_image_bounds_count;
       continue;
-      // } else if (draw_y < cell_top || draw_y >= cell_bot) {
-      //   e = e == RendererError::None ? RendererError::OutOfCellBounds : e;
     }
 
     for (int x = 0; x < bitmap.width; ++x) {
       auto draw_x = start_x + x;
+      stats.out_of_cell_bounds_count += (draw_x < cell_left) || (draw_x >= cell_right);
       if (draw_x < 0 || draw_x >= mat.cols) {
-        e = e == RendererError::None ? RendererError::OutOfImageBounds : e;
+        ++stats.out_of_image_bounds_count;
         continue;
-        // } else if (draw_x < cell_left || draw_x >= cell_right) {
-        //   e = e == RendererError::None ? RendererError::OutOfCellBounds :
-        //   e;
       }
 
-      if (bitmap.buffer[y * bitmap.width + x]) {  // If we need to draw
-        if (mat.at<uint8_t>(draw_y, draw_x)) {    // and there's something there
-
-          if (!draw_circle) {
-            circle = cv::Point(draw_x, draw_y);
-            draw_circle = true;
-          }
-
-          e = e == RendererError::None ? RendererError::Overwrite : e;
-          // fmt::print("Overwriting at ({}, {}), old: {}, new: {}\n", draw_x,
-          // draw_y,
-          //     mat.at<uint8_t>(draw_y, draw_x), bitmap.buffer[y *
-          //     bitmap.width + x]
-          //     );
-        }
+      if (bitmap.buffer[y * bitmap.width + x]) {
+        // Add an overwrite count if there's a nonzero pixel at the location
+        // we're going to write to.
+        stats.overwrites += static_cast<bool>(mat.at<uint8_t>(draw_y, draw_x));
 
         // Alpha blending, courtesy of equation on wikipedia.
         // Note that I assume the color for the new 
@@ -338,14 +309,11 @@ RendererError Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
     }
   }
 
-  if (draw_circle) {
-    // cv::circle(mat, circle, 50, cv::Scalar(1), 15);
-    // cv::circle(mat, circle, 50, cv::Scalar(255), 5);
-  }
-
   if (!write_count) {
-    e = e == RendererError::None ? RendererError::EmptyCharacter : e;
+    // Abuse the container and dump something in here to indicate that the
+    // caller should stuff the right character in.
+    stats.empty_characters.push_back(0);
   }
 
-  return e;
+  return stats;
 }
