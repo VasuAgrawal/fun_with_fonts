@@ -177,7 +177,7 @@ class Renderer {
   ~Renderer();
 
   Renderer(const Renderer& other) = delete;
-  Renderer(Renderer&& other) = delete;
+  Renderer(Renderer&& other);
   Renderer& operator=(const Renderer& other) = delete;
   Renderer& operator=(Renderer&& other);
 

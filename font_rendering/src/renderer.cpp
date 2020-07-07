@@ -32,6 +32,10 @@ Renderer::~Renderer() {
   FT_Done_Face(face_);
 }
 
+Renderer::Renderer(Renderer&& other) {
+  *this = std::move(other);
+}
+
 Renderer& Renderer::operator=(Renderer&& other) {
   user_atlas_ = std::move(other.user_atlas_);
   user_atlas_width_ = other.user_atlas_width_;

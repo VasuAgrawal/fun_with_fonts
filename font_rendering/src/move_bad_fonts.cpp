@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <thread>
 
+#include "font_rendering/recursive_font_mapper.h"
 #include "font_rendering/renderer.h"
 namespace fs = std::filesystem;
 
@@ -67,47 +68,29 @@ int main(int argc, char* argv[]) {
     atlas.emplace_back(1, c);
   }
 
-  std::atomic_bool new_work{true};
-  std::vector<std::unique_ptr<folly::ProducerConsumerQueue<std::string>>>
-      render_queues;
-  render_queues.reserve(FLAGS_thread_count);
+  RecursiveFontMapper mapper(FLAGS_thread_count);
+
+  std::vector<Renderer> renderers;
+  renderers.reserve(FLAGS_thread_count);
   for (int i = 0; i < FLAGS_thread_count; ++i) {
-    render_queues.emplace_back(
-        std::make_unique<folly::ProducerConsumerQueue<std::string>>(
-            QUEUE_SIZE));
+    renderers.emplace_back(Renderer(atlas));
   }
   std::vector<MoveStats> move_stats(FLAGS_thread_count);
 
-  std::vector<std::thread> render_threads;
-  render_threads.reserve(FLAGS_thread_count);
-  for (int i = 0; i < FLAGS_thread_count; ++i) {
-    render_threads.emplace_back([&, &queue = render_queues[i],
-                                 &move_stats = move_stats[i]]() {
-      Renderer r(atlas);
-
-      std::string canonical;
-      fs::path canonical_path;
-      while (true) {
-        if (!queue->read(canonical)) {                     // failed to get work
-          if (new_work.load(std::memory_order_acquire)) {  // more to come
-            using namespace std::chrono_literals;
-            std::this_thread::sleep_for(1ms);
-            continue;
-          } else {  // Nothing else is coming, we're done
-            break;
-          }
-        }
-
-        // Have some actual work now
+  mapper.runAndWait(
+      [&](int32_t thread_index, const std::string& canonical) {
+        auto& r = renderers[thread_index];
         r.loadFontFace(canonical);
         auto [mat, render_stats] = r.renderAtlas();
 
-        canonical_path = canonical;
+        auto& m = move_stats[thread_index];
+        fs::path canonical_path = canonical;
 
         if (render_stats.font_not_loaded) {
           // Font load failed for this font, it's never going to get better.
-          const auto target = fs::canonical(error_dir / MoveStats::FAILED_FONT_LOAD_DIR) /
-                              canonical_path.filename();
+          const auto target =
+              fs::canonical(error_dir / MoveStats::FAILED_FONT_LOAD_DIR) /
+              canonical_path.filename();
 
           if (!FLAGS_dry_run) {
             fs::rename(canonical_path, target);
@@ -115,95 +98,53 @@ int main(int argc, char* argv[]) {
 
           if (FLAGS_verbose) {
             fmt::print("Couldn't load font. Moving from {} to {}.\n", canonical,
-                      target.string());
+                       target.string());
           }
-          
-          ++move_stats.failed_font_loads;
-          continue;
+
+          ++m.failed_font_loads;
+          return;
         }
 
         if (render_stats.char_loads_failed.size()) {
-          const auto target = fs::canonical(error_dir / MoveStats::FAILED_CHAR_LOAD_DIR) /
-                              canonical_path.filename();
-          
+          const auto target =
+              fs::canonical(error_dir / MoveStats::FAILED_CHAR_LOAD_DIR) /
+              canonical_path.filename();
+
           if (!FLAGS_dry_run) {
             fs::rename(canonical_path, target);
           }
 
           if (FLAGS_verbose) {
-          fmt::print("char load failed for font. Moving from {} to {}.\n",
-                     canonical, target.string());
+            fmt::print("char load failed for font. Moving from {} to {}.\n",
+                       canonical, target.string());
           }
 
-          ++move_stats.failed_char_loads;
-          continue;
+          ++m.failed_char_loads;
+          return;
         }
 
         if (render_stats.empty_characters.size()) {
           const auto target =
-              fs::canonical(error_dir / MoveStats::EMPTY_CHAR_DIR) / canonical_path.filename();
-          
+              fs::canonical(error_dir / MoveStats::EMPTY_CHAR_DIR) /
+              canonical_path.filename();
+
           if (!FLAGS_dry_run) {
             fs::rename(canonical_path, target);
           }
 
           if (FLAGS_verbose) {
-          // Nonzero empty characters means the font is incomplete, we
-          // definitely don't want it.
-          fmt::print("Missing some characters in font. Moving from {} to {}.\n",
-                     canonical, target.string());
+            // Nonzero empty characters means the font is incomplete, we
+            // definitely don't want it.
+            fmt::print(
+                "Missing some characters in font. Moving from {} to {}.\n",
+                canonical, target.string());
           }
 
-          ++move_stats.empty_characters;
-          continue;
+          ++m.empty_characters;
+          return;
         }
-      }
-    });
-  }
-
-  size_t count = 0;
-  for (auto& p : fs::recursive_directory_iterator(FLAGS_font_dir)) {
-    if (FLAGS_count > 0 && count >= FLAGS_count) {
-      break;
-    }
-
-    if (!fs::is_regular_file(p) ||
-        std::find(KNOWN_FONT_EXTENSIONS.begin(), KNOWN_FONT_EXTENSIONS.end(),
-                  p.path().extension()) == KNOWN_FONT_EXTENSIONS.end()) {
-      continue;
-    }
-
-    ++count;
-    const auto canonical = fs::canonical(p).string();
-    // fmt::print("Loading font from: {}\n", canonical);
-
-    // Use the count to pick a queue to add the path to. If that one's full,
-    // iterate through the rest of them. If they're all full, wait a second,
-    // and repeat, ad infineum.
-    while (true) {
-      // Try all the queues once, starting with the one we're supposed to
-      for (int i = 0; i < render_queues.size(); ++i) {
-        const auto queue_index = (count + i) % render_queues.size();
-        if (render_queues[queue_index]->write(canonical)) {
-          goto loaded;
-        }
-      }
-
-      // And if we're not able to put a thing into a queue after cycling
-      // through them all once, take a breather.
-      using namespace std::chrono_literals;
-      std::this_thread::sleep_for(1ms);
-    }
-
-  loaded:;
-  }
-
-  new_work.store(false, std::memory_order_release);
-  for (int i = 0; i < render_threads.size(); ++i) {
-    if (render_threads[i].joinable()) {
-      render_threads[i].join();
-    }
-  }
+      },
+      FLAGS_font_dir, FLAGS_count);
 
   // Now, we should be able to count all of the stats.
   MoveStats total_move_stats;
