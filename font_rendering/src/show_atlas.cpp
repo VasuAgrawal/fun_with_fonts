@@ -2,6 +2,7 @@
 #include <iostream>
 #include <sstream>
 
+#include "font_rendering/recursive_font_mapper.h"
 #include "font_rendering/renderer.h"
 namespace fs = std::filesystem;
 
@@ -14,6 +15,10 @@ DEFINE_string(font_dir, "", "Path to font directory");
 DEFINE_bool(errors_only, false, "Show only images with errors");
 DEFINE_string(atlas, "", "Override atlas");
 DEFINE_bool(cells, true, "Put each character in its own cell");
+ 
+// duplicated from recursive_font_mapper.h
+inline static const std::vector<std::string> KNOWN_FONT_EXTENSIONS{
+    ".otf", ".ttf", ".svg", ".eot", ".woff", ".woff2", ".ttc"};
 
 int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);

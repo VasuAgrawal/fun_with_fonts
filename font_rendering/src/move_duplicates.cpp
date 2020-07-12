@@ -1,19 +1,19 @@
 // Recursively traverse through a directory tree, rendering fonts and moving the
 // ones that fail some basic and deterministic checks to another directory.
 
-#include <filesystem>
-#include <thread>
-#include <unordered_map>
+#include <fmt/format.h>
+#include <gflags/gflags.h>
+
+#include <fstream>
 #include <sstream>
+#include <unordered_map>
+#include <unordered_set>
+
+#include <filesystem>
+namespace fs = std::filesystem;
 
 #include "font_rendering/recursive_font_mapper.h"
 #include "font_rendering/renderer.h"
-namespace fs = std::filesystem;
-
-#include <fmt/format.h>
-#include <folly/ProducerConsumerQueue.h>
-#include <gflags/gflags.h>
-#include <opencv2/highgui.hpp>
 
 DEFINE_bool(verbose, false, "More detailed output");
 DEFINE_bool(dry_run, false, "Don't actually move any files");
@@ -21,13 +21,46 @@ DEFINE_string(font_dir, "", "Path to font directory");
 DEFINE_string(error_dir, "", "Path to error directory");
 DEFINE_int32(thread_count, 24, "Number of render threads to use");
 DEFINE_int32(count, 0, "Number of files to stop after");
-DEFINE_string(show_images_for, "", "Show fonts that have the given duplicates");
+DEFINE_string(whitelist, "", "Path to .txt with allowed matches");
 
 struct alignas(64) DuplicateStats {
-  std::unordered_map<std::string, uint32_t> match_set_counts;
-  std::vector<cv::Mat> match_images;
-  uint32_t duplicate_alphabet = 0;
+  inline static const std::string ALLOWED_DUPLICATE_DIR = "allowed_duplicates";
+  inline static const std::string FAILED_DUPLICATE_DIR = "failed_duplicates";
+
+  uint32_t allowed_duplicates = 0;
+  uint32_t failed_duplicates = 0;
+
+  DuplicateStats& operator+=(const DuplicateStats& other) {
+    allowed_duplicates += other.allowed_duplicates;
+    failed_duplicates+= other.failed_duplicates;
+    return *this;
+  }
 };
+
+std::unordered_set<std::string> loadWhitelist(fs::path path) {
+  if (path.empty()) {
+    return {};
+  }
+
+  if (!fs::exists(path)) {
+    fmt::print("Warning: whitelist at {} doesn't exist!", path.string());
+    return {};
+  }
+
+  if (!fs::is_regular_file(path)) {
+    fmt::print("Warning: whitelist at {} isn't a file!", path.string());
+    return {};
+  }
+
+  std::unordered_set<std::string> whitelist;
+  std::ifstream file(path);
+  std::string line;
+  while (std::getline(file, line)) {
+    whitelist.insert(line); 
+  }
+
+  return whitelist;
+}
 
 int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -38,33 +71,14 @@ int main(int argc, char* argv[]) {
     fmt::print("provide an error dir dipshit\n");
     return -2;
   }
-
+  
   // Make the error directories
-  // fs::path error_dir(FLAGS_error_dir);
-  // fs::create_directories(error_dir / MoveStats::FAILED_FONT_LOAD_DIR);
-  // fs::create_directories(error_dir / MoveStats::FAILED_CHAR_LOAD_DIR);
-  // fs::create_directories(error_dir / MoveStats::EMPTY_CHAR_DIR);
+  fs::path error_dir(FLAGS_error_dir);
+  fs::create_directories(error_dir / DuplicateStats::ALLOWED_DUPLICATE_DIR);
+  fs::create_directories(error_dir / DuplicateStats::FAILED_DUPLICATE_DIR);
 
-  // Atlas is composed of all of the printable ascii characters.
-  const char first = ' ';
-  const char last = '~';
-  std::vector<std::string> atlas;
-  {
-    std::stringstream s;
-    size_t written = 0;
-    for (char c = first; c <= last; ++c) {
-      s << c;
-      ++written;
-      if (written == 12) {
-        atlas.emplace_back(s.str());
-        s.str(std::string());
-        written = 0;
-      }
-    }
-    if (written) {
-      atlas.emplace_back(s.str());
-    }
-  }
+  const auto whitelist = loadWhitelist(FLAGS_whitelist);
+  const auto atlas = makeFullAtlas();
 
   std::vector<Renderer> renderers;
   renderers.reserve(FLAGS_thread_count);
@@ -79,89 +93,65 @@ int main(int argc, char* argv[]) {
       [&](int32_t thread_index, const std::string& canonical) {
         auto& r = renderers[thread_index];
         r.loadFontFace(canonical);
-        auto [mat, render_stats] = r.renderAtlas(true, FLAGS_show_images_for);
+        auto [mat, render_stats] = r.renderAtlas();
+        const auto match_strings = RenderStats::makeMatchStrings(
+            render_stats.matched_bitmaps);
 
-        std::vector<std::vector<char>> match_sets;
-
-        for (const auto [a, b] : render_stats.matched_bitmaps) {
-          bool a_found = false;
-          bool b_found = false;
-          // Try to find a match set that contains one of the characters.
-          for (auto& set : match_sets) {
-            for (const auto elem : set) {
-              a_found |= elem == a;
-              b_found |= elem == b;
-            } 
-
-            // If we've found a match for either character in this set, we'll
-            // add the missing one and then stop searching sets.
-            if (a_found) {
-              set.push_back(b);
-              break;
-            }
-
-            if (b_found) {
-              set.push_back(a);
-              break;
-            }
-          }
-
-          if (!a_found && !b_found) {
-            std::vector set{a, b};
-            match_sets.emplace_back(std::move(set)); 
-          }
+        // If there are no duplicates, don't do anything.
+        if (render_stats.matched_bitmaps.empty()) {
+          return;
         }
 
-        auto& stats = duplicate_stats[thread_index];
-        for (auto& set : match_sets) {
-          std::sort(set.begin(), set.end());
-          std::stringstream s;
-          for (const auto elem : set) {
-            s << elem;
+        // Figure out how many of the match strings are in the whitelist.
+        size_t allowed_match_strings = 0;
+        for (const auto& s : match_strings) {
+          if (whitelist.contains(s)) {
+            ++allowed_match_strings;
+          } 
+        }
+
+        fs::path canonical_path = canonical;
+
+        if (match_strings.size() == allowed_match_strings) {
+          // If all matches fall in the whitelist, move into a whitelist dir.
+          const auto target =
+            fs::canonical(error_dir / DuplicateStats::ALLOWED_DUPLICATE_DIR) /
+              canonical_path.filename();
+
+
+          if (!FLAGS_dry_run) {
+            fs::rename(canonical_path, target);
+          }
+          
+          if (FLAGS_verbose) {
+            fmt::print("Font has allowed duplicates. Moving from {} to {}.\n", 
+                canonical,
+                       target.string());
           }
 
-          const auto str = s.str();
-          if (str == FLAGS_show_images_for) { // str can never be "
-            stats.match_images.emplace_back(mat.clone());
+          return;
+        } else {
+          // At least one match is not in the whitelist, move into another dir.
+          
+          const auto target =
+            fs::canonical(error_dir / DuplicateStats::FAILED_DUPLICATE_DIR) /
+              canonical_path.filename();
+
+          if (!FLAGS_dry_run) {
+            fs::rename(canonical_path, target);
           }
-          ++stats.match_set_counts[s.str()];
+
+
+          if (FLAGS_verbose) {
+            fmt::print("Font has bad duplicates. Moving from {} to {}.\n", 
+                canonical,
+                       target.string());
+          }
+
         }
+
+         
+
       },
       FLAGS_font_dir, FLAGS_count);
-
-
-  DuplicateStats merged;
-  // Merge all of the match_set_counts into a single one.
-  for (const auto& stats : duplicate_stats) {
-    for (const auto& [match_set, count] : stats.match_set_counts) {
-      merged.match_set_counts[match_set] += count;
-    }
-
-    merged.match_images.insert(merged.match_images.end(),
-        std::make_move_iterator(stats.match_images.begin()),
-        std::make_move_iterator(stats.match_images.end()));
-  }
-
-  for (const auto& image : merged.match_images) {
-    cv::imshow("Match image", image);
-    if (cv::waitKey(0) == 'q') {
-      break;
-    }
-  }
-
-  fmt::print("Match set,Occurences,Length\n");
-  for (auto [match_set, count] : merged.match_set_counts) {
-      if (FLAGS_show_images_for != "" && FLAGS_show_images_for != match_set) {
-        continue;
-      }
-      std::string escaped = match_set;
-      auto pos = match_set.find('"');
-      if (pos != std::string::npos) {
-        escaped.replace(pos, 1, "\"\"");
-      }
-      // Need to surround match string in quotes
-      // Need to add an extra ' to the beginning to force text mode in sheets
-      // Adding a length column to avoid having to compute it in sheets
-      fmt::print("\"'{}\",{},{}\n", escaped, count, match_set.size());
-  }
 }

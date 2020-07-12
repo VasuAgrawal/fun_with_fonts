@@ -52,6 +52,15 @@ target_link_libraries(MoveBadFonts PRIVATE
     ${GFLAGS_LIBRARIES}
 )
 
+add_executable(IdentifyDuplicates src/identify_duplicates.cpp)
+target_include_directories(IdentifyDuplicates PRIVATE
+    ${GFLAGS_INCLUDE_DIRS}
+)
+target_link_libraries(IdentifyDuplicates PRIVATE
+    Renderer
+    ${GFLAGS_LIBRARIES}
+)
+
 add_executable(MoveDuplicates src/move_duplicates.cpp)
 target_include_directories(MoveDuplicates PRIVATE
     ${GFLAGS_INCLUDE_DIRS}

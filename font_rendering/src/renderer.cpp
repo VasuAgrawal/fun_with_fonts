@@ -9,13 +9,120 @@
 #include <opencv2/imgproc.hpp>
 #include <type_traits>
 
-Renderer::Renderer() : Renderer(DEFAULT_ATLAS) {};
+std::vector<std::string> RenderStats::makeMatchStrings(
+    const std::vector<std::pair<char, char>>& matched_bitmaps) {
 
-Renderer::Renderer(const std::vector<std::string>& user_atlas) : user_atlas_(user_atlas) {
+        std::vector<std::vector<char>> match_sets;
+
+        for (const auto [a, b] : matched_bitmaps) {
+          bool a_found = false;
+          bool b_found = false;
+          // Try to find a match set that contains one of the characters.
+          for (auto& set : match_sets) {
+            for (const auto elem : set) {
+              a_found |= elem == a;
+              b_found |= elem == b;
+            }
+
+            // If we've found a match for either character in this set, we'll
+            // add the missing one and then stop searching sets.
+            if (a_found) {
+              set.push_back(b);
+              break;
+            }
+
+            if (b_found) {
+              set.push_back(a);
+              break;
+            }
+          }
+
+          if (!a_found && !b_found) {
+            std::vector set{a, b};
+            match_sets.emplace_back(std::move(set));
+          }
+        }
+
+        std::vector<std::string> match_strings;
+        match_strings.reserve(match_sets.size());
+        for (auto& set : match_sets) {
+          std::sort(set.begin(), set.end());
+          std::stringstream s;
+          for (const auto elem : set) {
+            s << elem;
+          }
+
+          match_strings.push_back(s.str());
+
+          // if (str == FLAGS_show_images_for) {  // str can never be "
+          //   stats.match_images.emplace_back(mat.clone());
+          // }
+          // ++stats.match_set_counts[s.str()];
+        }
+
+        return match_strings;
+
+
+
+}
+
+  void RenderStats::update(const RenderStats& other) {
+    font_not_loaded |= other.font_not_loaded;
+
+    char_loads_failed.reserve(char_loads_failed.size() +
+                              other.char_loads_failed.size());
+    char_loads_failed.insert(char_loads_failed.end(),
+                             other.char_loads_failed.begin(),
+                             other.char_loads_failed.end());
+
+    out_of_image_bounds_count += other.out_of_image_bounds_count;
+    out_of_cell_bounds_count += other.out_of_cell_bounds_count;
+    overwrites += other.overwrites;
+
+    matched_bitmaps.reserve(matched_bitmaps.size() +
+                            other.matched_bitmaps.size());
+    matched_bitmaps.insert(matched_bitmaps.end(), other.matched_bitmaps.begin(),
+                           other.matched_bitmaps.end());
+
+    empty_characters.reserve(empty_characters.size() +
+                             other.empty_characters.size());
+    empty_characters.insert(empty_characters.end(),
+                            other.empty_characters.begin(),
+                            other.empty_characters.end());
+  }
+
+
+std::vector<std::string> makeFullAtlas() {
+  const char first = ' ';
+  const char last = '~';
+  std::vector<std::string> atlas;
+  {
+    std::stringstream s;
+    size_t written = 0;
+    for (char c = first; c <= last; ++c) {
+      s << c;
+      ++written;
+      if (written == 12) {
+        atlas.emplace_back(s.str());
+        s.str(std::string());
+        written = 0;
+      }
+    }
+    if (written) {
+      atlas.emplace_back(s.str());
+    }
+  }
+
+  return atlas;
+}
+
+Renderer::Renderer() : Renderer(DEFAULT_ATLAS){};
+
+Renderer::Renderer(const std::vector<std::string>& user_atlas)
+    : user_atlas_(user_atlas) {
   for (const auto& line : user_atlas_) {
     user_atlas_width_ = std::max(user_atlas_width_, line.size());
   }
-
 
   reloadFreeType();
 
@@ -28,13 +135,9 @@ Renderer::Renderer(const std::vector<std::string>& user_atlas) : user_atlas_(use
   atlas_buffer_ = std::make_unique<uint8_t[]>(atlas_buffer_size_);
 }
 
-Renderer::~Renderer() {
-  FT_Done_Face(face_);
-}
+Renderer::~Renderer() { FT_Done_Face(face_); }
 
-Renderer::Renderer(Renderer&& other) {
-  *this = std::move(other);
-}
+Renderer::Renderer(Renderer&& other) { *this = std::move(other); }
 
 Renderer& Renderer::operator=(Renderer&& other) {
   user_atlas_ = std::move(other.user_atlas_);
@@ -42,7 +145,7 @@ Renderer& Renderer::operator=(Renderer&& other) {
   render_count_ = other.render_count_;
 
   library_ = std::move(other.library_);
-  
+
   FT_Done_Face(face_);
   face_ = other.face_;
   other.face_ = nullptr;
@@ -61,7 +164,8 @@ Renderer& Renderer::operator=(Renderer&& other) {
   return *this;
 }
 
-std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells, std::string_view highlight) {
+std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
+    bool cells, std::string_view highlight) {
   RenderStats stats;
 
   if (++render_count_ % RELOAD_COUNT == 0) {
@@ -71,8 +175,7 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells, std::string_v
 
   if (!loaded_) {
     stats.font_not_loaded = true;
-    return std::make_tuple<cv::Mat, RenderStats>(
-        {}, std::move(stats));
+    return std::make_tuple<cv::Mat, RenderStats>({}, std::move(stats));
   }
 
   std::memset(atlas_buffer_.get(), 0, atlas_buffer_size_);
@@ -104,7 +207,7 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells, std::string_v
 
       auto slot = face_->glyph;
       auto& bitmap = slot->bitmap;
-      
+
       const auto cx = ATLAS_PADDING + col * (EM + ATLAS_BORDER) + HALF_EM;
 
       // Move the pen to the start of the line for the new character.
@@ -124,18 +227,18 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells, std::string_v
 
       if (cells) {
         // Each character should get rendered to its own cell.
-        
+
         // Offset from the center of the cell by the bitmap size. This generally
         // works, but makes things look "off" a bit when characters are supposed
         // to overlap (e.g. with a long swish from Q).
         // const auto px = cx - bitmap.width / 2;
         // const auto py = cy - bitmap.rows / 2;
-        
+
         // Instead, try to correct the X position based on the pen advance
         // (which indicates where the next character should be start). We'll
         // also try to adjust Y so that characters look like they're sitting on
         // the line.
-       
+
         offset_x = -((slot->advance.x >> 6) - slot->bitmap_left) / 2;
         offset_y = HALF_EM - slot->bitmap_top;
 
@@ -148,16 +251,13 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells, std::string_v
         // Use the continuous pen, leaving no space between characters.
         offset_x = slot->bitmap_left;
         offset_y = -slot->bitmap_top;
-      
+
         px = cont_px + offset_x;
         py = cont_py + offset_y;
 
         // px = cont_px + slot->bitmap_left;
         // py = cont_py - slot->bitmap_top;
       }
-
-
-
 
       // Skip the duplicate check for spaces.
       if (c != ' ') {
@@ -166,7 +266,7 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells, std::string_v
         char_buffer_sizes_.push_back(char_buffer_size);
         char_buffer_symbols_.push_back(c);
         const auto char_buffer_offset =
-          char_buffer_offsets_.emplace_back(offset_x, offset_y);
+            char_buffer_offsets_.emplace_back(offset_x, offset_y);
         char_buffers_.push_back(std::make_unique<uint8_t[]>(char_buffer_size));
         auto& char_buffer = char_buffers_.back();
         std::memcpy(char_buffer.get(), bitmap.buffer, char_buffer_size);
@@ -194,16 +294,16 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells, std::string_v
 
           // The bitmaps need to be identical.
           if (std::memcmp(char_buffers_[i].get(), char_buffer.get(),
-                           cmp_size)) {
+                          cmp_size)) {
             continue;
           }
-            // fmt::print("Matched buffer {} ({}) to buffer {} ({})\n",
-            //            char_buffers_.size() - 1, c, i, char_buffer_symbols_[i]);
+          // fmt::print("Matched buffer {} ({}) to buffer {} ({})\n",
+          //            char_buffers_.size() - 1, c, i,
+          //            char_buffer_symbols_[i]);
           stats.matched_bitmaps.emplace_back(char_buffer_symbols_[i], c);
           break;
         }
       }
-
 
       const auto cell_left = cx - HALF_EM - ATLAS_BORDER;
       const auto cell_right = cx + HALF_EM + ATLAS_BORDER + 1;
@@ -219,15 +319,17 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells, std::string_v
 
       if (draw_highlight) {
         if (cells) {
-          cv::rectangle(mat, cv::Point(cell_left, cell_top), 
-              cv::Point(cell_right, cell_bot), cv::Scalar(128), 2);
+          cv::rectangle(mat, cv::Point(cell_left, cell_top),
+                        cv::Point(cell_right, cell_bot), cv::Scalar(128), 2);
         }
       }
 
-      // fmt::print("Character {} width {} left {} advance x {}, height {}  top {} advance y {}\n",
-      //     c, bitmap.width, slot->bitmap_left, slot->advance.x >> 6, bitmap.rows, slot->bitmap_top, slot->advance.y >> 6);
-      auto new_stats = drawBitmap(mat, bitmap, px, py,
-                     cell_left, cell_top, cell_right, cell_bot);
+      // fmt::print("Character {} width {} left {} advance x {}, height {}  top
+      // {} advance y {}\n",
+      //     c, bitmap.width, slot->bitmap_left, slot->advance.x >> 6,
+      //     bitmap.rows, slot->bitmap_top, slot->advance.y >> 6);
+      auto new_stats = drawBitmap(mat, bitmap, px, py, cell_left, cell_top,
+                                  cell_right, cell_bot);
 
       // Don't treat space as an empty character, but transfer over the rest of
       // the rendering stats.
@@ -251,7 +353,7 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells, std::string_v
   }
 
   return std::make_tuple<cv::Mat, RenderStats>(std::move(mat),
-                                                 std::move(stats));
+                                               std::move(stats));
 }
 
 bool Renderer::loadFontFace(const std::string& path, int index) {
@@ -327,18 +429,20 @@ void Renderer::reloadFreeType() {
 }
 
 RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
-                                   int start_y, int cell_left, int cell_top,
-                                   int cell_right, int cell_bot) {
+                                 int start_y, int cell_left, int cell_top,
+                                 int cell_right, int cell_bot) {
   RenderStats stats;
   uint64_t write_count = 0;
 
   // cv::circle(mat, cv::Point(start_x, start_y), 3, cv::Scalar(255), 1);
-  // cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right, cell_bot),
+  // cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right,
+  // cell_bot),
   //     cv::Scalar(255), 2);
 
   for (int y = 0; y < bitmap.rows; ++y) {
     auto draw_y = start_y + y;
-    stats.out_of_cell_bounds_count += (draw_y < cell_top) || (draw_y >= cell_bot);
+    stats.out_of_cell_bounds_count +=
+        (draw_y < cell_top) || (draw_y >= cell_bot);
     if (draw_y < 0 || draw_y >= mat.rows) {
       ++stats.out_of_image_bounds_count;
       continue;
@@ -346,7 +450,8 @@ RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
 
     for (int x = 0; x < bitmap.width; ++x) {
       auto draw_x = start_x + x;
-      stats.out_of_cell_bounds_count += (draw_x < cell_left) || (draw_x >= cell_right);
+      stats.out_of_cell_bounds_count +=
+          (draw_x < cell_left) || (draw_x >= cell_right);
       if (draw_x < 0 || draw_x >= mat.cols) {
         ++stats.out_of_image_bounds_count;
         continue;
@@ -358,11 +463,12 @@ RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
         stats.overwrites += static_cast<bool>(mat.at<uint8_t>(draw_y, draw_x));
 
         // Alpha blending, courtesy of equation on wikipedia.
-        // Note that I assume the color for the new 
+        // Note that I assume the color for the new
         const float dst_rgb = mat.at<uint8_t>(draw_y, draw_x) / 255.0f;
-        const float src_rgb = 255.0f; // white in mono
+        const float src_rgb = 255.0f;  // white in mono
         const float src_a = bitmap.buffer[y * bitmap.width + x] / 255.0f;
-        const uint8_t out_rgb = src_rgb * (1.0f * src_a + dst_rgb * (1.0f - src_a));
+        const uint8_t out_rgb =
+            src_rgb * (1.0f * src_a + dst_rgb * (1.0f - src_a));
         mat.at<uint8_t>(draw_y, draw_x) = out_rgb;
 
         ++write_count;
