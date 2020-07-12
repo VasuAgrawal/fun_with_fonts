@@ -19,11 +19,6 @@ DEFINE_string(error_dir, "", "Path to error directory");
 DEFINE_int32(thread_count, 24, "Number of render threads to use");
 DEFINE_int32(count, 0, "Number of files to stop after");
 
-static constexpr size_t QUEUE_SIZE = 100;
-
-// This should be basically all of the symbols you could want to care about,
-// which will help filter the _really_ good fonts from the okay fonts.
-
 // 64 byte alignment seems to be the case on my machine at least.
 // grep "cache_alignment" /proc/cpuinfo
 struct alignas(64) MoveStats {

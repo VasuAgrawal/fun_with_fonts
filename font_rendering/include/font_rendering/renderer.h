@@ -3,6 +3,7 @@
 #include "freetype/config/ftoption.h"
 #include <ft2build.h>
 
+#include <string_view>
 #include <filesystem>
 #include <limits>
 #include <memory>
@@ -181,7 +182,7 @@ class Renderer {
   Renderer& operator=(const Renderer& other) = delete;
   Renderer& operator=(Renderer&& other);
 
-  std::tuple<cv::Mat, RenderStats> renderAtlas(bool cells = true);
+  std::tuple<cv::Mat, RenderStats> renderAtlas(bool cells = true, std::string_view highlight="");
   bool loadFontFace(const std::string& path, int index = 0);
   
   static std::optional<std::filesystem::path> saveImage(
@@ -202,9 +203,10 @@ class Renderer {
   int atlas_height_ = 0;
   size_t atlas_buffer_size_ = 0;
   std::unique_ptr<uint8_t[]> atlas_buffer_ = nullptr;
-  std::vector<std::unique_ptr<uint8_t[]>> char_buffers_;
   std::vector<size_t> char_buffer_sizes_;
   std::vector<char> char_buffer_symbols_;
+  std::vector<std::pair<int, int>> char_buffer_offsets_;
+  std::vector<std::unique_ptr<uint8_t[]>> char_buffers_;
 
   void reloadFreeType();
 

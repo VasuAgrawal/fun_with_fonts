@@ -61,7 +61,7 @@ Renderer& Renderer::operator=(Renderer&& other) {
   return *this;
 }
 
-std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells) {
+std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells, std::string_view highlight) {
   RenderStats stats;
 
   if (++render_count_ % RELOAD_COUNT == 0) {
@@ -80,7 +80,7 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells) {
   char_buffers_.clear();
   char_buffer_sizes_.clear();
   char_buffer_symbols_.clear();
-
+  char_buffer_offsets_.clear();
 
   // Continuous pen data, in case we don't want to draw each character in its
   // individual cell (which is the default).
@@ -104,45 +104,21 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells) {
 
       auto slot = face_->glyph;
       auto& bitmap = slot->bitmap;
-
-      // Skip the check for spaces.
-      if (c != ' ') {
-        // Check if the character is a duplicate by doing memory comparison
-        const auto char_buffer_size = bitmap.rows * bitmap.width;
-        char_buffer_sizes_.push_back(char_buffer_size);
-        char_buffers_.push_back(std::make_unique<uint8_t[]>(char_buffer_size));
-        char_buffer_symbols_.push_back(c);
-        auto& char_buffer = char_buffers_.back();
-        std::memcpy(char_buffer.get(), bitmap.buffer, char_buffer_size);
-
-        for (size_t i = 0; i < char_buffers_.size() - 1; ++i) {
-          // they need to have the same size to be comparable
-          auto cmp_size = char_buffer_sizes_[i];
-          if (cmp_size != char_buffer_size) {
-            continue;
-          }
-
-          if ((char_buffer_symbols_[i] != c) && 
-              !std::memcmp(char_buffers_[i].get(), char_buffer.get(),
-                           cmp_size)) {
-            // fmt::print("Matched buffer {} ({}) to buffer {} ({})\n",
-            //            char_buffers_.size() - 1, c, i, char_buffer_symbols_[i]);
-            stats.matched_bitmaps.emplace_back(char_buffer_symbols_[i], c);
-            break;
-          }
-        }
-      }
-
+      
       const auto cx = ATLAS_PADDING + col * (EM + ATLAS_BORDER) + HALF_EM;
-      const auto cell_left = cx - HALF_EM - ATLAS_BORDER;
-      const auto cell_right = cx + HALF_EM + ATLAS_BORDER + 1;
 
-      // Again, move the pen to the start of the line for the new character.
+      // Move the pen to the start of the line for the new character.
       // Bottom left corner of the cell, effectively.
       if (col == 0) {
         cont_px = cx - HALF_EM;
       }
 
+      // First, figure out where to place the character. This offset is computed
+      // first so that we can use it to identify duplicates, as some characters
+      // can have the same actual bitmap, but be rendered somewhere else.
+
+      int offset_x = 0;
+      int offset_y = 0;
       int px = 0;
       int py = 0;
 
@@ -159,12 +135,93 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(bool cells) {
         // (which indicates where the next character should be start). We'll
         // also try to adjust Y so that characters look like they're sitting on
         // the line.
-        px = cx - ((slot->advance.x >> 6) - slot->bitmap_left) / 2;
-        py = cy + HALF_EM - slot->bitmap_top;
+       
+        offset_x = -((slot->advance.x >> 6) - slot->bitmap_left) / 2;
+        offset_y = HALF_EM - slot->bitmap_top;
+
+        px = cx + offset_x;
+        py = cy + offset_y;
+
+        // px = cx - ((slot->advance.x >> 6) - slot->bitmap_left) / 2;
+        // py = cy + HALF_EM - slot->bitmap_top;
       } else {
         // Use the continuous pen, leaving no space between characters.
-        px = cont_px + slot->bitmap_left;
-        py = cont_py - slot->bitmap_top;
+        offset_x = slot->bitmap_left;
+        offset_y = -slot->bitmap_top;
+      
+        px = cont_px + offset_x;
+        py = cont_py + offset_y;
+
+        // px = cont_px + slot->bitmap_left;
+        // py = cont_py - slot->bitmap_top;
+      }
+
+
+
+
+      // Skip the duplicate check for spaces.
+      if (c != ' ') {
+        // Check if the character is a duplicate by doing memory comparison
+        const auto char_buffer_size = bitmap.rows * bitmap.width;
+        char_buffer_sizes_.push_back(char_buffer_size);
+        char_buffer_symbols_.push_back(c);
+        const auto char_buffer_offset =
+          char_buffer_offsets_.emplace_back(offset_x, offset_y);
+        char_buffers_.push_back(std::make_unique<uint8_t[]>(char_buffer_size));
+        auto& char_buffer = char_buffers_.back();
+        std::memcpy(char_buffer.get(), bitmap.buffer, char_buffer_size);
+
+        for (size_t i = 0; i < char_buffers_.size() - 1; ++i) {
+          // They need to have the same size to be comparable. This is put first
+          // since it's the most likely check to fail.
+          auto cmp_size = char_buffer_sizes_[i];
+          if (cmp_size != char_buffer_size) {
+            continue;
+          }
+
+          // The offsets need to be the same. Otherwise, we have the same glyph
+          // rendered at different locations, which is not considered duplicate.
+          if (char_buffer_offsets_[i] != char_buffer_offset) {
+            continue;
+          }
+
+          // The symbols need to be different. This isn't necessary if rendering
+          // an atlas (as each symbols is rendered once), but is necessary if
+          // rendering generic text.
+          if (char_buffer_symbols_[i] == c) {
+            continue;
+          }
+
+          // The bitmaps need to be identical.
+          if (std::memcmp(char_buffers_[i].get(), char_buffer.get(),
+                           cmp_size)) {
+            continue;
+          }
+            // fmt::print("Matched buffer {} ({}) to buffer {} ({})\n",
+            //            char_buffers_.size() - 1, c, i, char_buffer_symbols_[i]);
+          stats.matched_bitmaps.emplace_back(char_buffer_symbols_[i], c);
+          break;
+        }
+      }
+
+
+      const auto cell_left = cx - HALF_EM - ATLAS_BORDER;
+      const auto cell_right = cx + HALF_EM + ATLAS_BORDER + 1;
+
+      // Determine if the character should get highlighted
+      bool draw_highlight = false;
+      for (const auto cmp : highlight) {
+        if (c == cmp) {
+          draw_highlight = true;
+          break;
+        }
+      }
+
+      if (draw_highlight) {
+        if (cells) {
+          cv::rectangle(mat, cv::Point(cell_left, cell_top), 
+              cv::Point(cell_right, cell_bot), cv::Scalar(128), 2);
+        }
       }
 
       // fmt::print("Character {} width {} left {} advance x {}, height {}  top {} advance y {}\n",

@@ -52,6 +52,15 @@ target_link_libraries(MoveBadFonts PRIVATE
     ${GFLAGS_LIBRARIES}
 )
 
+add_executable(MoveDuplicates src/move_duplicates.cpp)
+target_include_directories(MoveDuplicates PRIVATE
+    ${GFLAGS_INCLUDE_DIRS}
+)
+target_link_libraries(MoveDuplicates PRIVATE
+    Renderer
+    ${GFLAGS_LIBRARIES}
+)
+
 add_executable(ShowAtlas src/show_atlas.cpp)
 target_include_directories(ShowAtlas PRIVATE
     ${GFLAGS_INCLUDE_DIRS}
