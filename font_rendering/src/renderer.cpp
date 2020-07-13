@@ -11,86 +11,81 @@
 
 std::vector<std::string> RenderStats::makeMatchStrings(
     const std::vector<std::pair<char, char>>& matched_bitmaps) {
+  std::vector<std::vector<char>> match_sets;
 
-        std::vector<std::vector<char>> match_sets;
+  for (const auto [a, b] : matched_bitmaps) {
+    bool a_found = false;
+    bool b_found = false;
+    // Try to find a match set that contains one of the characters.
+    for (auto& set : match_sets) {
+      for (const auto elem : set) {
+        a_found |= elem == a;
+        b_found |= elem == b;
+      }
 
-        for (const auto [a, b] : matched_bitmaps) {
-          bool a_found = false;
-          bool b_found = false;
-          // Try to find a match set that contains one of the characters.
-          for (auto& set : match_sets) {
-            for (const auto elem : set) {
-              a_found |= elem == a;
-              b_found |= elem == b;
-            }
+      // If we've found a match for either character in this set, we'll
+      // add the missing one and then stop searching sets.
+      if (a_found) {
+        set.push_back(b);
+        break;
+      }
 
-            // If we've found a match for either character in this set, we'll
-            // add the missing one and then stop searching sets.
-            if (a_found) {
-              set.push_back(b);
-              break;
-            }
+      if (b_found) {
+        set.push_back(a);
+        break;
+      }
+    }
 
-            if (b_found) {
-              set.push_back(a);
-              break;
-            }
-          }
-
-          if (!a_found && !b_found) {
-            std::vector set{a, b};
-            match_sets.emplace_back(std::move(set));
-          }
-        }
-
-        std::vector<std::string> match_strings;
-        match_strings.reserve(match_sets.size());
-        for (auto& set : match_sets) {
-          std::sort(set.begin(), set.end());
-          std::stringstream s;
-          for (const auto elem : set) {
-            s << elem;
-          }
-
-          match_strings.push_back(s.str());
-
-          // if (str == FLAGS_show_images_for) {  // str can never be "
-          //   stats.match_images.emplace_back(mat.clone());
-          // }
-          // ++stats.match_set_counts[s.str()];
-        }
-
-        return match_strings;
-
-
-
-}
-
-  void RenderStats::update(const RenderStats& other) {
-    font_not_loaded |= other.font_not_loaded;
-
-    char_loads_failed.reserve(char_loads_failed.size() +
-                              other.char_loads_failed.size());
-    char_loads_failed.insert(char_loads_failed.end(),
-                             other.char_loads_failed.begin(),
-                             other.char_loads_failed.end());
-
-    out_of_image_bounds_count += other.out_of_image_bounds_count;
-    out_of_cell_bounds_count += other.out_of_cell_bounds_count;
-    overwrites += other.overwrites;
-
-    matched_bitmaps.reserve(matched_bitmaps.size() +
-                            other.matched_bitmaps.size());
-    matched_bitmaps.insert(matched_bitmaps.end(), other.matched_bitmaps.begin(),
-                           other.matched_bitmaps.end());
-
-    empty_characters.reserve(empty_characters.size() +
-                             other.empty_characters.size());
-    empty_characters.insert(empty_characters.end(),
-                            other.empty_characters.begin(),
-                            other.empty_characters.end());
+    if (!a_found && !b_found) {
+      std::vector set{a, b};
+      match_sets.emplace_back(std::move(set));
+    }
   }
 
+  std::vector<std::string> match_strings;
+  match_strings.reserve(match_sets.size());
+  for (auto& set : match_sets) {
+    std::sort(set.begin(), set.end());
+    std::stringstream s;
+    for (const auto elem : set) {
+      s << elem;
+    }
+
+    match_strings.push_back(s.str());
+
+    // if (str == FLAGS_show_images_for) {  // str can never be "
+    //   stats.match_images.emplace_back(mat.clone());
+    // }
+    // ++stats.match_set_counts[s.str()];
+  }
+
+  return match_strings;
+}
+
+void RenderStats::update(const RenderStats& other) {
+  font_not_loaded |= other.font_not_loaded;
+
+  char_loads_failed.reserve(char_loads_failed.size() +
+                            other.char_loads_failed.size());
+  char_loads_failed.insert(char_loads_failed.end(),
+                           other.char_loads_failed.begin(),
+                           other.char_loads_failed.end());
+
+  out_of_image_bounds_count += other.out_of_image_bounds_count;
+  out_of_cell_bounds_count += other.out_of_cell_bounds_count;
+  overwrites += other.overwrites;
+
+  matched_bitmaps.reserve(matched_bitmaps.size() +
+                          other.matched_bitmaps.size());
+  matched_bitmaps.insert(matched_bitmaps.end(), other.matched_bitmaps.begin(),
+                         other.matched_bitmaps.end());
+
+  empty_characters.reserve(empty_characters.size() +
+                           other.empty_characters.size());
+  empty_characters.insert(empty_characters.end(),
+                          other.empty_characters.begin(),
+                          other.empty_characters.end());
+}
 
 std::vector<std::string> makeFullAtlas() {
   const char first = ' ';
@@ -116,10 +111,12 @@ std::vector<std::string> makeFullAtlas() {
   return atlas;
 }
 
-Renderer::Renderer(RendererSpacing spacing) : Renderer(DEFAULT_ATLAS, std::move(spacing)){};
+Renderer::Renderer(RendererSpacing spacing)
+    : Renderer(DEFAULT_ATLAS, std::move(spacing)){};
 
-Renderer::Renderer(const std::vector<std::string>& user_atlas, RendererSpacing spacing)
-    : user_atlas_(user_atlas), spacing_(std::move(spacing)){
+Renderer::Renderer(const std::vector<std::string>& user_atlas,
+                   RendererSpacing spacing)
+    : user_atlas_(user_atlas), spacing_(std::move(spacing)) {
   for (const auto& line : user_atlas_) {
     user_atlas_width_ = std::max(user_atlas_width_, line.size());
   }
@@ -129,8 +126,10 @@ Renderer::Renderer(const std::vector<std::string>& user_atlas, RendererSpacing s
   auto dim = [this](int border, int padding, int count) {
     return 2 * padding + std::max(count - 1, 0) * border + count * spacing_.em;
   };
-  atlas_width_ = dim(spacing_.atlas_border, spacing_.atlas_padding, user_atlas_width_);
-  atlas_height_ = dim(spacing_.atlas_border, spacing_.atlas_padding, user_atlas_.size());
+  atlas_width_ =
+      dim(spacing_.atlas_border, spacing_.atlas_padding, user_atlas_width_);
+  atlas_height_ =
+      dim(spacing_.atlas_border, spacing_.atlas_padding, user_atlas_.size());
   atlas_buffer_size_ = atlas_width_ * atlas_height_;
   atlas_buffer_ = std::make_unique<uint8_t[]>(atlas_buffer_size_);
 }
@@ -192,7 +191,9 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
   int cont_py = 0;
 
   for (int row = 0; const auto& line : user_atlas_) {
-    const auto cy = spacing_.atlas_padding + row * (spacing_.em + spacing_.atlas_border) + spacing_.half_em;
+    const auto cy = spacing_.atlas_padding +
+                    row * (spacing_.em + spacing_.atlas_border) +
+                    spacing_.half_em;
     const auto cell_top = cy - spacing_.half_em - spacing_.atlas_border;
     const auto cell_bot = cy + spacing_.half_em + spacing_.atlas_border + 1;
 
@@ -209,7 +210,9 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
       auto slot = face_->glyph;
       auto& bitmap = slot->bitmap;
 
-      const auto cx = spacing_.atlas_padding + col * (spacing_.em + spacing_.atlas_border) + spacing_.half_em;
+      const auto cx = spacing_.atlas_padding +
+                      col * (spacing_.em + spacing_.atlas_border) +
+                      spacing_.half_em;
 
       // Move the pen to the start of the line for the new character.
       // Bottom left corner of the cell, effectively.
@@ -241,7 +244,7 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
         // the line.
 
         offset_x = -((slot->advance.x >> 6) - slot->bitmap_left) / 2;
-        offset_y = spacing_.half_em- slot->bitmap_top;
+        offset_y = spacing_.half_em - slot->bitmap_top;
 
         px = cx + offset_x;
         py = cy + offset_y;
@@ -307,7 +310,7 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
       }
 
       const auto cell_left = cx - spacing_.half_em - spacing_.atlas_border;
-      const auto cell_right = cx + spacing_.half_em + spacing_.atlas_border+ 1;
+      const auto cell_right = cx + spacing_.half_em + spacing_.atlas_border + 1;
 
       // Determine if the character should get highlighted
       bool draw_highlight = false;

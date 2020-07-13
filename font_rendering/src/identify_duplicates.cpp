@@ -44,8 +44,8 @@ int main(int argc, char* argv[]) {
         auto& r = renderers[thread_index];
         r.loadFontFace(canonical);
         auto [mat, render_stats] = r.renderAtlas(true, FLAGS_show_images_for);
-        const auto match_strings = RenderStats::makeMatchStrings(
-            render_stats.matched_bitmaps);
+        const auto match_strings =
+            RenderStats::makeMatchStrings(render_stats.matched_bitmaps);
 
         auto& stats = duplicate_stats[thread_index];
         for (const auto& s : match_strings) {

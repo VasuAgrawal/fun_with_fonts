@@ -23,7 +23,8 @@ class RecursiveFontMapper {
   }
 
   template <typename Callable>
-  void runAndWait(const Callable& fn, fs::path font_dir, int32_t max_count = 0) {
+  void runAndWait(const Callable& fn, fs::path font_dir,
+                  int32_t max_count = 0) {
     std::vector<std::thread> work_threads;
     work_threads.reserve(thread_count_);
     for (int i = 0; i < thread_count_; ++i) {

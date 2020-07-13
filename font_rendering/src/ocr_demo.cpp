@@ -1,16 +1,17 @@
+#include <tesseract/publictypes.h>
+
 #include <filesystem>
 #include <iostream>
 #include <sstream>
-#include <tesseract/publictypes.h>
 
 #include "font_rendering/renderer.h"
 namespace fs = std::filesystem;
 
 #include <fmt/format.h>
 #include <gflags/gflags.h>
+#include <tesseract/baseapi.h>
 
 #include <opencv2/highgui.hpp>
-#include <tesseract/baseapi.h>
 
 DEFINE_string(font_dir, "", "Path to font directory");
 DEFINE_bool(errors_only, false, "Show only images with errors");
@@ -25,7 +26,7 @@ int main(int argc, char* argv[]) {
     fmt::print("provide a font dir dipshit\n");
     return -1;
   }
-  
+
   // Initialize OCR
   auto tesseract = std::make_unique<tesseract::TessBaseAPI>();
   if (tesseract->Init(NULL, "eng")) {
@@ -44,7 +45,7 @@ int main(int argc, char* argv[]) {
     while (std::getline(stream, line, '\n')) {
       user_atlas.push_back(line);
     }
- 
+
     r = Renderer(user_atlas, RendererSpacing(DPI, POINT));
   }
 
@@ -71,7 +72,7 @@ int main(int argc, char* argv[]) {
 
       cv::Mat inv;
       cv::subtract(static_cast<uint8_t>(255), mat, inv);
-      
+
       tesseract->SetPageSegMode(tesseract::PSM_AUTO);
       tesseract->SetImage(inv.data, inv.cols, inv.rows, 1, inv.step);
       tesseract->SetSourceResolution(300);

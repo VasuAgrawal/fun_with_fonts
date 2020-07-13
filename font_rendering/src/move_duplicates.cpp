@@ -4,12 +4,11 @@
 #include <fmt/format.h>
 #include <gflags/gflags.h>
 
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <unordered_map>
 #include <unordered_set>
-
-#include <filesystem>
 namespace fs = std::filesystem;
 
 #include "font_rendering/recursive_font_mapper.h"
@@ -32,7 +31,7 @@ struct alignas(64) DuplicateStats {
 
   DuplicateStats& operator+=(const DuplicateStats& other) {
     allowed_duplicates += other.allowed_duplicates;
-    failed_duplicates+= other.failed_duplicates;
+    failed_duplicates += other.failed_duplicates;
     return *this;
   }
 };
@@ -56,7 +55,7 @@ std::unordered_set<std::string> loadWhitelist(fs::path path) {
   std::ifstream file(path);
   std::string line;
   while (std::getline(file, line)) {
-    whitelist.insert(line); 
+    whitelist.insert(line);
   }
 
   return whitelist;
@@ -71,7 +70,7 @@ int main(int argc, char* argv[]) {
     fmt::print("provide an error dir dipshit\n");
     return -2;
   }
-  
+
   // Make the error directories
   fs::path error_dir(FLAGS_error_dir);
   fs::create_directories(error_dir / DuplicateStats::ALLOWED_DUPLICATE_DIR);
@@ -94,8 +93,8 @@ int main(int argc, char* argv[]) {
         auto& r = renderers[thread_index];
         r.loadFontFace(canonical);
         auto [mat, render_stats] = r.renderAtlas();
-        const auto match_strings = RenderStats::makeMatchStrings(
-            render_stats.matched_bitmaps);
+        const auto match_strings =
+            RenderStats::makeMatchStrings(render_stats.matched_bitmaps);
 
         // If there are no duplicates, don't do anything.
         if (render_stats.matched_bitmaps.empty()) {
@@ -107,7 +106,7 @@ int main(int argc, char* argv[]) {
         for (const auto& s : match_strings) {
           if (whitelist.contains(s)) {
             ++allowed_match_strings;
-          } 
+          }
         }
 
         fs::path canonical_path = canonical;
@@ -115,43 +114,35 @@ int main(int argc, char* argv[]) {
         if (match_strings.size() == allowed_match_strings) {
           // If all matches fall in the whitelist, move into a whitelist dir.
           const auto target =
-            fs::canonical(error_dir / DuplicateStats::ALLOWED_DUPLICATE_DIR) /
+              fs::canonical(error_dir / DuplicateStats::ALLOWED_DUPLICATE_DIR) /
               canonical_path.filename();
-
 
           if (!FLAGS_dry_run) {
             fs::rename(canonical_path, target);
           }
-          
+
           if (FLAGS_verbose) {
-            fmt::print("Font has allowed duplicates. Moving from {} to {}.\n", 
-                canonical,
-                       target.string());
+            fmt::print("Font has allowed duplicates. Moving from {} to {}.\n",
+                       canonical, target.string());
           }
 
           return;
         } else {
           // At least one match is not in the whitelist, move into another dir.
-          
+
           const auto target =
-            fs::canonical(error_dir / DuplicateStats::FAILED_DUPLICATE_DIR) /
+              fs::canonical(error_dir / DuplicateStats::FAILED_DUPLICATE_DIR) /
               canonical_path.filename();
 
           if (!FLAGS_dry_run) {
             fs::rename(canonical_path, target);
           }
 
-
           if (FLAGS_verbose) {
-            fmt::print("Font has bad duplicates. Moving from {} to {}.\n", 
-                canonical,
-                       target.string());
+            fmt::print("Font has bad duplicates. Moving from {} to {}.\n",
+                       canonical, target.string());
           }
-
         }
-
-         
-
       },
       FLAGS_font_dir, FLAGS_count);
 }

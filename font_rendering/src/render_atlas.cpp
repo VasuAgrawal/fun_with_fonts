@@ -87,7 +87,8 @@ int main(int argc, char* argv[]) {
         if (auto e = static_cast<int>(err); e) {
           LOG(WARNING) << fmt::format("Issue while rendering font {}: {}",
                                       canonical, RendererErrorStrings[e]);
-          output_dirname = output_dirname / ERROR_DIR_NAME / RendererErrorNames[e];
+          output_dirname =
+              output_dirname / ERROR_DIR_NAME / RendererErrorNames[e];
         }
 
         r.saveImage(output_dirname, output_basename, mat,
@@ -152,6 +153,6 @@ int main(int argc, char* argv[]) {
   // Remove error dir itself if empty
   if (fs::is_directory(error_dir) && fs::is_empty(error_dir)) {
     LOG(INFO) << "Removing empty error dir " << error_dir;
-    fs::remove(error_dir); 
+    fs::remove(error_dir);
   }
 }
