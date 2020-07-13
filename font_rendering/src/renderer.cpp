@@ -116,10 +116,10 @@ std::vector<std::string> makeFullAtlas() {
   return atlas;
 }
 
-Renderer::Renderer() : Renderer(DEFAULT_ATLAS){};
+Renderer::Renderer(RendererSpacing spacing) : Renderer(DEFAULT_ATLAS, std::move(spacing)){};
 
-Renderer::Renderer(const std::vector<std::string>& user_atlas)
-    : user_atlas_(user_atlas) {
+Renderer::Renderer(const std::vector<std::string>& user_atlas, RendererSpacing spacing)
+    : user_atlas_(user_atlas), spacing_(std::move(spacing)){
   for (const auto& line : user_atlas_) {
     user_atlas_width_ = std::max(user_atlas_width_, line.size());
   }
@@ -127,10 +127,10 @@ Renderer::Renderer(const std::vector<std::string>& user_atlas)
   reloadFreeType();
 
   auto dim = [this](int border, int padding, int count) {
-    return 2 * padding + std::max(count - 1, 0) * border + count * EM;
+    return 2 * padding + std::max(count - 1, 0) * border + count * spacing_.em;
   };
-  atlas_width_ = dim(ATLAS_BORDER, ATLAS_PADDING, user_atlas_width_);
-  atlas_height_ = dim(ATLAS_BORDER, ATLAS_PADDING, user_atlas_.size());
+  atlas_width_ = dim(spacing_.atlas_border, spacing_.atlas_padding, user_atlas_width_);
+  atlas_height_ = dim(spacing_.atlas_border, spacing_.atlas_padding, user_atlas_.size());
   atlas_buffer_size_ = atlas_width_ * atlas_height_;
   atlas_buffer_ = std::make_unique<uint8_t[]>(atlas_buffer_size_);
 }
@@ -140,6 +140,7 @@ Renderer::~Renderer() { FT_Done_Face(face_); }
 Renderer::Renderer(Renderer&& other) { *this = std::move(other); }
 
 Renderer& Renderer::operator=(Renderer&& other) {
+  spacing_ = std::move(other.spacing_);
   user_atlas_ = std::move(other.user_atlas_);
   user_atlas_width_ = other.user_atlas_width_;
   render_count_ = other.render_count_;
@@ -191,13 +192,13 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
   int cont_py = 0;
 
   for (int row = 0; const auto& line : user_atlas_) {
-    const auto cy = ATLAS_PADDING + row * (EM + ATLAS_BORDER) + HALF_EM;
-    const auto cell_top = cy - HALF_EM - ATLAS_BORDER;
-    const auto cell_bot = cy + HALF_EM + ATLAS_BORDER + 1;
+    const auto cy = spacing_.atlas_padding + row * (spacing_.em + spacing_.atlas_border) + spacing_.half_em;
+    const auto cell_top = cy - spacing_.half_em - spacing_.atlas_border;
+    const auto cell_bot = cy + spacing_.half_em + spacing_.atlas_border + 1;
 
     // Move the continuous pen to the middle of the bottom of the first cell
     // every time there's a new row.
-    cont_py = cell_bot - ATLAS_BORDER;
+    cont_py = cell_bot - spacing_.atlas_border;
 
     for (int col = 0; const auto& c : line) {
       if (FT_Load_Char(face_, c, FT_LOAD_RENDER)) {
@@ -208,12 +209,12 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
       auto slot = face_->glyph;
       auto& bitmap = slot->bitmap;
 
-      const auto cx = ATLAS_PADDING + col * (EM + ATLAS_BORDER) + HALF_EM;
+      const auto cx = spacing_.atlas_padding + col * (spacing_.em + spacing_.atlas_border) + spacing_.half_em;
 
       // Move the pen to the start of the line for the new character.
       // Bottom left corner of the cell, effectively.
       if (col == 0) {
-        cont_px = cx - HALF_EM;
+        cont_px = cx - spacing_.half_em;
       }
 
       // First, figure out where to place the character. This offset is computed
@@ -240,13 +241,13 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
         // the line.
 
         offset_x = -((slot->advance.x >> 6) - slot->bitmap_left) / 2;
-        offset_y = HALF_EM - slot->bitmap_top;
+        offset_y = spacing_.half_em- slot->bitmap_top;
 
         px = cx + offset_x;
         py = cy + offset_y;
 
         // px = cx - ((slot->advance.x >> 6) - slot->bitmap_left) / 2;
-        // py = cy + HALF_EM - slot->bitmap_top;
+        // py = cy + spacing_.half_em - slot->bitmap_top;
       } else {
         // Use the continuous pen, leaving no space between characters.
         offset_x = slot->bitmap_left;
@@ -305,8 +306,8 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
         }
       }
 
-      const auto cell_left = cx - HALF_EM - ATLAS_BORDER;
-      const auto cell_right = cx + HALF_EM + ATLAS_BORDER + 1;
+      const auto cell_left = cx - spacing_.half_em - spacing_.atlas_border;
+      const auto cell_right = cx + spacing_.half_em + spacing_.atlas_border+ 1;
 
       // Determine if the character should get highlighted
       bool draw_highlight = false;
@@ -359,7 +360,7 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
 bool Renderer::loadFontFace(const std::string& path, int index) {
   loaded_ = true;
   loaded_ &= !FT_New_Face(library_, path.c_str(), index, &face_);
-  loaded_ &= !FT_Set_Char_Size(face_, POINT * 64, 0, DPI, 0);
+  loaded_ &= !FT_Set_Char_Size(face_, spacing_.point * 64, 0, spacing_.dpi, 0);
 
   if (loaded_) {
     face_name_ = path;

@@ -151,19 +151,39 @@ class FtPtr {
   FT_Library ptr_ = nullptr;
 };
 
+struct RendererSpacing {
+ public:
+  int dpi;
+  int point;
+
+  // Compute these in the middle because we need them for atlas_border/padding
+  // default values. User should never change the values, as it's determined
+  // by the DPI / point settings.
+  int em;
+  int half_em;
+
+  int atlas_border;
+  int atlas_padding;
+
+  explicit RendererSpacing(int dpi = -1, int point = -1, int atlas_border = -1,
+                           int atlas_padding = -1)
+      : dpi(dpi > 0 ? dpi : 110),
+        point(point > 0 ? point : 72),
+        em(this->point * this->dpi / 72),
+        half_em(em / 2),
+        atlas_border(atlas_border >= 0 ? atlas_border : em / 8),
+        atlas_padding(atlas_padding >= 0
+                          ? atlas_padding
+                          : std::max(em / 2, this->atlas_border)) {}
+};
+
 class Renderer {
   static constexpr size_t RELOAD_COUNT = 1000;
 
-  static constexpr int DPI = 110;
-  static constexpr int POINT = 72;
-  static constexpr int EM = POINT * DPI / 72;
-  static constexpr int HALF_EM = EM / 2;
-  static constexpr int ATLAS_BORDER = EM / 8;  // Border for each cell
-  static constexpr int ATLAS_PADDING = std::max(EM / 2, ATLAS_BORDER);  // side
-
  public:
-  Renderer();
-  explicit Renderer(const std::vector<std::string>& user_atlas);
+  explicit Renderer(RendererSpacing spacing = RendererSpacing());
+  explicit Renderer(const std::vector<std::string>& user_atlas,
+                    RendererSpacing spacing = RendererSpacing());
   ~Renderer();
 
   Renderer(const Renderer& other) = delete;
@@ -180,6 +200,7 @@ class Renderer {
       const cv::Mat& mat, ImageWriteStyle style);
 
  private:
+  RendererSpacing spacing_;
   std::vector<std::string> user_atlas_;
   size_t user_atlas_width_ = 0;
 

@@ -32,8 +32,10 @@ int main(int argc, char* argv[]) {
     fmt::print("Unable to initialize tesseract\n");
     return -2;
   }
- 
-  Renderer r;
+
+  const int DPI = 300;
+  const int POINT = 12;
+  Renderer r(RendererSpacing(DPI, POINT));
 
   if (FLAGS_atlas != "") {
     std::vector<std::string> user_atlas;
@@ -43,7 +45,7 @@ int main(int argc, char* argv[]) {
       user_atlas.push_back(line);
     }
  
-    r = Renderer(user_atlas);
+    r = Renderer(user_atlas, RendererSpacing(DPI, POINT));
   }
 
   for (auto& p : fs::recursive_directory_iterator(FLAGS_font_dir)) {
@@ -72,7 +74,7 @@ int main(int argc, char* argv[]) {
       
       tesseract->SetPageSegMode(tesseract::PSM_AUTO);
       tesseract->SetImage(inv.data, inv.cols, inv.rows, 1, inv.step);
-      tesseract->SetSourceResolution(110);
+      tesseract->SetSourceResolution(300);
 
       auto text = std::string(tesseract->GetUTF8Text());
       std::cout << text << std::endl;

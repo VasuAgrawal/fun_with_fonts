@@ -17,6 +17,7 @@ find_package(benchmark REQUIRED)
 find_library(GLOG_LIBRARIES glog REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(Tesseract tesseract)
+find_package(GTest REQUIRED)
 
 add_executable(StandaloneSentencesDemo src/standalone_sentences.cpp)
 target_include_directories(StandaloneSentencesDemo PRIVATE
@@ -95,10 +96,22 @@ target_link_libraries(OcrDemo PRIVATE
     ${Tesseract_LIBRARIES}
 )
 
+# Things that fall under the test/ folder, rather than in src/
 add_executable(RendererBenchmark test/render_bench.cpp)
 target_link_libraries(RendererBenchmark PRIVATE
     Renderer
     benchmark::benchmark
+)
+
+# enable_testing()
+add_executable(RendererTest test/render_test.cpp)
+target_include_directories(RendererTest PRIVATE
+    ${GTEST_INCLUDE_DIRS}
+)
+target_link_libraries(RendererTest PRIVATE
+    Renderer
+    ${GTEST_BOTH_LIBRARIES}
+    pthread
 )
 
 add_executable(ImageWriteBenchmark test/image_write.cpp)
@@ -122,3 +135,4 @@ target_link_libraries(RecursiveFontList PRIVATE
     fmt::fmt
     ${GFLAGS_LIBRARIES}
 )
+
