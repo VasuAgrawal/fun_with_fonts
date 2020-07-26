@@ -17,6 +17,8 @@ DEFINE_string(font_dir, "", "Path to font directory");
 DEFINE_bool(errors_only, false, "Show only images with errors");
 DEFINE_string(atlas, "", "Override atlas");
 DEFINE_bool(cells, true, "Put each character in its own cell");
+DEFINE_int32(dpi, 300, "DPI to use for font rendering");
+DEFINE_int32(point, 12, "Point size for font rendering");
 
 inline static const std::vector<std::string> font_extensions{".otf", ".ttf"};
 
@@ -34,9 +36,7 @@ int main(int argc, char* argv[]) {
     return -2;
   }
 
-  const int DPI = 300;
-  const int POINT = 12;
-  Renderer r(RendererSpacing(DPI, POINT));
+  Renderer r(RendererSpacing(FLAGS_dpi, FLAGS_point));
 
   if (FLAGS_atlas != "") {
     std::vector<std::string> user_atlas;
@@ -46,7 +46,7 @@ int main(int argc, char* argv[]) {
       user_atlas.push_back(line);
     }
 
-    r = Renderer(user_atlas, RendererSpacing(DPI, POINT));
+    r = Renderer(user_atlas, RendererSpacing(FLAGS_dpi, FLAGS_point));
   }
 
   for (auto& p : fs::recursive_directory_iterator(FLAGS_font_dir)) {
@@ -75,10 +75,10 @@ int main(int argc, char* argv[]) {
 
       tesseract->SetPageSegMode(tesseract::PSM_AUTO);
       tesseract->SetImage(inv.data, inv.cols, inv.rows, 1, inv.step);
-      tesseract->SetSourceResolution(300);
+      tesseract->SetSourceResolution(FLAGS_dpi);
 
       auto text = std::string(tesseract->GetUTF8Text());
-      std::cout << text << std::endl;
+      std::cout << text << std::flush;
 
       // auto text = std::unique_ptr<char[]>(tesseract->GetUTF8Text());
       // fmt::print("Recognized {}\n", text.get());
