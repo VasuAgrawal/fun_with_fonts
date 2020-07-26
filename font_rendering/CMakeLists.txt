@@ -9,6 +9,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+add_subdirectory(third_party)
+
 find_package(Freetype REQUIRED)
 find_package(OpenCV COMPONENTS core imgproc highgui REQUIRED)
 find_package(fmt REQUIRED)
@@ -112,6 +114,17 @@ target_link_libraries(RendererTest PRIVATE
     Renderer
     ${GTEST_BOTH_LIBRARIES}
     pthread
+)
+
+add_executable(LevenshteinTest test/levenshtein_test.cpp)
+target_include_directories(LevenshteinTest PRIVATE
+    include
+    ${GTEST_INCLUDE_DIRS}
+)
+target_link_libraries(LevenshteinTest PRIVATE
+    ${GTEST_BOTH_LIBRARIES}
+    pthread
+    Iosifovitch
 )
 
 add_executable(ImageWriteBenchmark test/image_write.cpp)
