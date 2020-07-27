@@ -13,14 +13,20 @@ namespace fs = std::filesystem;
 
 #include <opencv2/highgui.hpp>
 
+#include "font_rendering/levenshtein.h"
+#include "iosifovitch/iosifovitch.hpp"
+
 DEFINE_string(font_dir, "", "Path to font directory");
 DEFINE_bool(errors_only, false, "Show only images with errors");
 DEFINE_string(atlas, "", "Override atlas");
 DEFINE_bool(cells, true, "Put each character in its own cell");
 DEFINE_int32(dpi, 300, "DPI to use for font rendering");
 DEFINE_int32(point, 12, "Point size for font rendering");
+DEFINE_int32(border, RendererSpacing::DEFAULT, "Border size around cells");
+DEFINE_int32(padding, RendererSpacing::DEFAULT, "Padding size around image");
 
-inline static const std::vector<std::string> font_extensions{".otf", ".ttf"};
+inline static const std::vector<std::string> font_extensions{
+    ".otf", ".ttf", ".svg", ".eot", ".woff", ".woff2", ".ttc"};
 
 int main(int argc, char* argv[]) {
   gflags::ParseCommandLineFlags(&argc, &argv, true);
@@ -36,7 +42,8 @@ int main(int argc, char* argv[]) {
     return -2;
   }
 
-  Renderer r(RendererSpacing(FLAGS_dpi, FLAGS_point));
+  RendererSpacing spacing(FLAGS_dpi, FLAGS_point, FLAGS_border, FLAGS_padding);
+  Renderer r(spacing);
 
   if (FLAGS_atlas != "") {
     std::vector<std::string> user_atlas;
@@ -46,8 +53,10 @@ int main(int argc, char* argv[]) {
       user_atlas.push_back(line);
     }
 
-    r = Renderer(user_atlas, RendererSpacing(FLAGS_dpi, FLAGS_point));
+    r = Renderer(user_atlas, spacing);
   }
+
+  const auto atlas = r.getAtlasString();
 
   for (auto& p : fs::recursive_directory_iterator(FLAGS_font_dir)) {
     if (fs::is_regular_file(p) &&
@@ -78,7 +87,15 @@ int main(int argc, char* argv[]) {
       tesseract->SetSourceResolution(FLAGS_dpi);
 
       auto text = std::string(tesseract->GetUTF8Text());
-      std::cout << text << std::flush;
+      std::cout << "Reference: " << atlas;
+      std::cout << "Detected: " << text;
+      std::cout << "Levenshtein Distance: "
+                << iosifovitch::levenshtein_distance(atlas, text) << "\n";
+      std::cout << "Lower Levenshtein Distance: "
+                << iosifovitch::levenshtein_distance(lowerAsciiInUtf8(atlas),
+                                                     lowerAsciiInUtf8(text))
+                << "\n";
+      std::cout << std::flush;
 
       // auto text = std::unique_ptr<char[]>(tesseract->GetUTF8Text());
       // fmt::print("Recognized {}\n", text.get());

@@ -96,6 +96,7 @@ target_link_libraries(OcrDemo PRIVATE
     Renderer
     ${GFLAGS_LIBRARIES}
     ${Tesseract_LIBRARIES}
+    Iosifovitch
 )
 
 # Things that fall under the test/ folder, rather than in src/

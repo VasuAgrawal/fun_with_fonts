@@ -153,6 +153,7 @@ class FtPtr {
 
 struct RendererSpacing {
  public:
+  static constexpr int DEFAULT = -1;  // Just some negative value
   int dpi;
   int point;
 
@@ -165,8 +166,9 @@ struct RendererSpacing {
   int atlas_border;
   int atlas_padding;
 
-  explicit RendererSpacing(int dpi = -1, int point = -1, int atlas_border = -1,
-                           int atlas_padding = -1)
+  explicit RendererSpacing(int dpi = DEFAULT, int point = DEFAULT,
+                           int atlas_border = DEFAULT,
+                           int atlas_padding = DEFAULT)
       : dpi(dpi > 0 ? dpi : 110),
         point(point > 0 ? point : 72),
         em(this->point * this->dpi / 72),
@@ -190,6 +192,9 @@ class Renderer {
   Renderer(Renderer&& other);
   Renderer& operator=(const Renderer& other) = delete;
   Renderer& operator=(Renderer&& other);
+
+  const std::vector<std::string>& getAtlas() const;
+  std::string getAtlasString() const;
 
   std::tuple<cv::Mat, RenderStats> renderAtlas(bool cells = true,
                                                std::string_view highlight = "");

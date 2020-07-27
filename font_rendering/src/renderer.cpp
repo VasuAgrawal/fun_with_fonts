@@ -2,11 +2,11 @@
 
 #include <fmt/format.h>
 
-#include <array>
 #include <cstdint>
 #include <cstring>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <sstream>
 #include <type_traits>
 
 std::vector<std::string> RenderStats::makeMatchStrings(
@@ -162,6 +162,18 @@ Renderer& Renderer::operator=(Renderer&& other) {
   char_buffer_symbols_ = std::move(char_buffer_symbols_);
 
   return *this;
+}
+
+const std::vector<std::string>& Renderer::getAtlas() const {
+  return user_atlas_;
+}
+
+std::string Renderer::getAtlasString() const {
+  std::stringstream s;
+  for (const auto& line : user_atlas_) {
+    s << line << "\n";
+  }
+  return s.str();
 }
 
 std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
@@ -480,6 +492,9 @@ RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
     }
   }
 
+  // TODO: Update the write count to be based on the pixels in the bitmap,
+  // rather than those drawn to screen. There's currently a bug where we'll
+  // consider a character empty if is meant to be drawn entirely off the screen.
   if (!write_count) {
     // Abuse the container and dump something in here to indicate that the
     // caller should stuff the right character in.

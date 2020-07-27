@@ -54,3 +54,86 @@ size_t levenshteinNaive(std::string_view source, std::string_view target) {
 
   return d[index(m, n, width)];
 }
+
+class Utf8Iterator {
+  // Borrowing from this very helpful answer:
+  // https://stackoverflow.com/a/8054856/893643
+ public:
+  using iterator_category = std::forward_iterator_tag;
+  using value_type = std::string;
+  using difference_type = std::ptrdiff_t;
+  using pointer = const std::string*;
+  using reference = const std::string&;
+
+  Utf8Iterator(std::string_view::const_iterator it) : it_(it) {}
+
+  Utf8Iterator& operator++() {  // prefix increment
+    storeCurrent();
+    it_ += c_.size();
+    return *this;
+  }
+
+  reference operator*() const {
+    storeCurrent();
+    return c_;
+  }
+
+  bool operator==(const Utf8Iterator& other) const { return it_ == other.it_; }
+
+  bool operator!=(const Utf8Iterator& other) const { return !(*this == other); }
+
+ private:
+  std::string_view::const_iterator it_;
+  mutable std::string c_;
+
+  void storeCurrent() const {
+    // First, figure out how many bytes the current character is.
+    const auto c = *it_;
+    if ((c & 0b10000000) == 0) {  // Ascii
+      c_ = value_type(it_, it_ + 1);
+    } else if ((c & 0b11100000) == 0b11000000) {  // 2 byte character
+      c_ = value_type(it_, it_ + 2);
+    } else if ((c & 0b11110000) == 0b11100000) {  // 3 byte character
+      c_ = value_type(it_, it_ + 3);
+    } else if ((c & 0b11111000) == 0b11110000) {  // 4 byte character
+      c_ = value_type(it_, it_ + 4);
+    }
+  }
+};
+
+class Utf8Adapter {
+ public:
+  using const_iterator = Utf8Iterator;
+  // Not marked as explicit
+  Utf8Adapter(std::string_view view = "") : view_(view) {}
+
+  const_iterator begin() const { return const_iterator(view_.begin()); }
+
+  const_iterator cbegin() const { return begin(); }
+
+  const_iterator end() const { return const_iterator(view_.end()); }
+
+  const_iterator cend() const { return end(); }
+
+ private:
+  std::string_view view_;
+};
+
+// Return a new string with lowercase ascii characters. Supports UTF8 encoding.
+std::string lowerAsciiInUtf8(std::string_view s) {
+  std::string output;
+  output.reserve(s.size());
+  for (const auto& c : Utf8Adapter(s)) {
+    if (c.size() == 1) {
+      if ('A' <= c[0] && c[0] <= 'Z') {
+        output += c[0] - 'A' + 'a';
+      } else {
+        output += c[0];
+      }
+    } else {
+      output += c;
+    }
+  }
+
+  return output;
+}
