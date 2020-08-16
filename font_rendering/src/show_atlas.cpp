@@ -14,6 +14,7 @@ namespace fs = std::filesystem;
 DEFINE_string(font_dir, "", "Path to font directory");
 DEFINE_bool(errors_only, false, "Show only images with errors");
 DEFINE_string(atlas, "", "Override atlas");
+DEFINE_string(highlight, "", "Highlight characters");
 DEFINE_bool(cells, true, "Put each character in its own cell");
 
 // duplicated from recursive_font_mapper.h
@@ -27,7 +28,9 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  Renderer r;
+  RendererSpacing spacing;
+  // spacing.atlas_border = 0;
+  Renderer r(spacing);
 
   if (FLAGS_atlas != "") {
     std::vector<std::string> user_atlas;
@@ -37,7 +40,7 @@ int main(int argc, char* argv[]) {
       user_atlas.push_back(line);
     }
 
-    r = Renderer(user_atlas);
+    r = Renderer(user_atlas, spacing);
   }
 
   for (auto& p : fs::recursive_directory_iterator(FLAGS_font_dir)) {
@@ -47,7 +50,7 @@ int main(int argc, char* argv[]) {
       auto canonical = fs::canonical(p).string();
       // fmt::print("Loading font from: {}\n", canonical);
       r.loadFontFace(canonical);
-      auto [mat, err] = r.renderAtlas(FLAGS_cells);
+      auto [mat, err] = r.renderAtlas(FLAGS_cells, FLAGS_highlight);
       if (err) {
         fmt::print("Issue while rendering font {}: {}\n", canonical, err);
       } else {

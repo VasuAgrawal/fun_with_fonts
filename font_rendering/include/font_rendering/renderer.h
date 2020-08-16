@@ -28,6 +28,11 @@ struct RenderStats {
   std::vector<std::pair<char, char>> matched_bitmaps;
   std::vector<char> empty_characters;
 
+  uint32_t left_bound = std::numeric_limits<uint32_t>::max();
+  uint32_t top_bound = std::numeric_limits<uint32_t>::max();
+  uint32_t right_bound = 0;
+  uint32_t bottom_bound = 0;
+
   static std::vector<std::string> makeMatchStrings(
       const std::vector<std::pair<char, char>>& matched_bitmaps);
 

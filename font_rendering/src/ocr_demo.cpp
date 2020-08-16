@@ -12,6 +12,7 @@ namespace fs = std::filesystem;
 #include <tesseract/baseapi.h>
 
 #include <opencv2/highgui.hpp>
+#include <opencv2/imgproc.hpp>
 
 #include "font_rendering/levenshtein.h"
 #include "iosifovitch/iosifovitch.hpp"
@@ -23,7 +24,7 @@ DEFINE_bool(cells, true, "Put each character in its own cell");
 DEFINE_int32(dpi, 300, "DPI to use for font rendering");
 DEFINE_int32(point, 12, "Point size for font rendering");
 DEFINE_int32(border, RendererSpacing::DEFAULT, "Border size around cells");
-DEFINE_int32(padding, RendererSpacing::DEFAULT, "Padding size around image");
+DEFINE_uint32(padding, 0, "Padding size around image");
 
 inline static const std::vector<std::string> font_extensions{
     ".otf", ".ttf", ".svg", ".eot", ".woff", ".woff2", ".ttc"};
@@ -38,11 +39,23 @@ int main(int argc, char* argv[]) {
   // Initialize OCR
   auto tesseract = std::make_unique<tesseract::TessBaseAPI>();
   if (tesseract->Init(NULL, "eng")) {
+    // if (tesseract->Init("/data/fun_with_fonts/font_rendering/data/tessdata",
+    // "eng")) { if
+    // (tesseract->Init("/data/fun_with_fonts/font_rendering/data/tessdata-best",
+    // "eng")) { if
+    // (tesseract->Init("/data/fun_with_fonts/font_rendering/data/tessdata-fast",
+    // "eng")) {
     fmt::print("Unable to initialize tesseract\n");
     return -2;
   }
 
-  RendererSpacing spacing(FLAGS_dpi, FLAGS_point, FLAGS_border, FLAGS_padding);
+  if (!tesseract->SetVariable("debug_file", "/dev/null")) {
+    fmt::print("Unable to quiet tesseract\n");
+    return -3;
+  }
+
+  RendererSpacing spacing(FLAGS_dpi, FLAGS_point, FLAGS_border);
+  spacing.atlas_padding = spacing.em;
   Renderer r(spacing);
 
   if (FLAGS_atlas != "") {
@@ -65,10 +78,10 @@ int main(int argc, char* argv[]) {
       auto canonical = fs::canonical(p).string();
       // fmt::print("Loading font from: {}\n", canonical);
       r.loadFontFace(canonical);
-      auto [mat, err] = r.renderAtlas(FLAGS_cells);
+      auto [mat, stats] = r.renderAtlas(FLAGS_cells);
 
-      if (err) {
-        fmt::print("Issue while rendering font {}: {}\n", canonical, err);
+      if (stats) {
+        fmt::print("Issue while rendering font {}: {}\n", canonical, stats);
       } else {
         if (FLAGS_errors_only) {
           continue;
@@ -79,10 +92,22 @@ int main(int argc, char* argv[]) {
         continue;
       }
 
-      cv::Mat inv;
-      cv::subtract(static_cast<uint8_t>(255), mat, inv);
+      std::cout << "Rendered from [" << stats.left_bound << ", "
+                << stats.top_bound << "] to [" << stats.right_bound << ", "
+                << stats.bottom_bound << "]. Image Size: [" << mat.cols << ", "
+                << mat.rows << "]\n";
 
-      tesseract->SetPageSegMode(tesseract::PSM_AUTO);
+      cv::Mat tight_mat =
+          mat(cv::Rect(stats.left_bound, stats.top_bound,
+                       stats.right_bound - stats.left_bound + 1,
+                       stats.bottom_bound - stats.top_bound + 1));
+      cv::Mat inv(tight_mat.rows + 2 * FLAGS_padding,
+                  tight_mat.cols + 2 * FLAGS_padding, CV_8UC1, 255);
+      cv::Mat inv_roi = inv(cv::Rect(FLAGS_padding, FLAGS_padding,
+                                     tight_mat.cols, tight_mat.rows));
+      cv::subtract(static_cast<uint8_t>(255), tight_mat, inv_roi);
+
+      tesseract->SetPageSegMode(tesseract::PSM_SINGLE_LINE);
       tesseract->SetImage(inv.data, inv.cols, inv.rows, 1, inv.step);
       tesseract->SetSourceResolution(FLAGS_dpi);
 
@@ -95,7 +120,7 @@ int main(int argc, char* argv[]) {
                 << iosifovitch::levenshtein_distance(lowerAsciiInUtf8(atlas),
                                                      lowerAsciiInUtf8(text))
                 << "\n";
-      std::cout << std::flush;
+      std::cout << "\n" << std::flush;
 
       // auto text = std::unique_ptr<char[]>(tesseract->GetUTF8Text());
       // fmt::print("Recognized {}\n", text.get());

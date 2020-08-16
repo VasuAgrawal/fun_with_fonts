@@ -85,6 +85,12 @@ void RenderStats::update(const RenderStats& other) {
   empty_characters.insert(empty_characters.end(),
                           other.empty_characters.begin(),
                           other.empty_characters.end());
+
+  left_bound = std::min(left_bound, other.left_bound);
+  top_bound = std::min(top_bound, other.top_bound);
+  right_bound = std::max(right_bound, other.right_bound);
+  bottom_bound = std::max(bottom_bound, other.bottom_bound);
+
 }
 
 std::vector<std::string> makeFullAtlas() {
@@ -202,16 +208,22 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
   int cont_px = 0;
   int cont_py = 0;
 
+  // How much above the bottom of the cell the theoretical bottom of our drawing
+  // should be. This is useful since most fonts go a little below the EM box.
+  int bottom_offset = spacing_.em / 5;
+
   for (int row = 0; const auto& line : user_atlas_) {
     const auto cy = spacing_.atlas_padding +
                     row * (spacing_.em + spacing_.atlas_border) +
                     spacing_.half_em;
     const auto cell_top = cy - spacing_.half_em - spacing_.atlas_border;
     const auto cell_bot = cy + spacing_.half_em + spacing_.atlas_border + 1;
+    const auto tile_top = cy - spacing_.half_em;
+    const auto tile_bot = cy + spacing_.half_em + 1;
 
-    // Move the continuous pen to the middle of the bottom of the first cell
-    // every time there's a new row.
-    cont_py = cell_bot - spacing_.atlas_border;
+    // First move the continuous pen to the bottom of the new row, and then move
+    // it up a little bit to accommodate things going underneath the line.
+    cont_py = (cell_bot - spacing_.atlas_border) - bottom_offset;
 
     for (int col = 0; const auto& c : line) {
       if (FT_Load_Char(face_, c, FT_LOAD_RENDER)) {
@@ -259,7 +271,7 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
         offset_y = spacing_.half_em - slot->bitmap_top;
 
         px = cx + offset_x;
-        py = cy + offset_y;
+        py = cy + offset_y - bottom_offset;
 
         // px = cx - ((slot->advance.x >> 6) - slot->bitmap_left) / 2;
         // py = cy + spacing_.half_em - slot->bitmap_top;
@@ -323,6 +335,8 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
 
       const auto cell_left = cx - spacing_.half_em - spacing_.atlas_border;
       const auto cell_right = cx + spacing_.half_em + spacing_.atlas_border + 1;
+      const auto tile_left = cx - spacing_.half_em;
+      const auto tile_right = cx + spacing_.half_em + 1;
 
       // Determine if the character should get highlighted
       bool draw_highlight = false;
@@ -335,8 +349,8 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
 
       if (draw_highlight) {
         if (cells) {
-          cv::rectangle(mat, cv::Point(cell_left, cell_top),
-                        cv::Point(cell_right, cell_bot), cv::Scalar(128), 2);
+          cv::rectangle(mat, cv::Point(tile_left, tile_top),
+                        cv::Point(tile_right, tile_bot), cv::Scalar(128), 1);
         }
       }
 
@@ -450,7 +464,10 @@ RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
   RenderStats stats;
   uint64_t write_count = 0;
 
+  // Draw the start of the copies
   // cv::circle(mat, cv::Point(start_x, start_y), 3, cv::Scalar(255), 1);
+  
+  // Draw a rectangle around the entire cell
   // cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right,
   // cell_bot),
   //     cv::Scalar(255), 2);
@@ -486,6 +503,12 @@ RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
         const uint8_t out_rgb =
             src_rgb * (1.0f * src_a + dst_rgb * (1.0f - src_a));
         mat.at<uint8_t>(draw_y, draw_x) = out_rgb;
+
+        // Update the render stats if we actually draw something to the bitmap
+        stats.left_bound = std::min(stats.left_bound, static_cast<uint32_t>(draw_x));
+        stats.top_bound = std::min(stats.top_bound, static_cast<uint32_t>(draw_y));
+        stats.right_bound = std::max(stats.right_bound, static_cast<uint32_t>(draw_x));
+        stats.bottom_bound = std::max(stats.bottom_bound, static_cast<uint32_t>(draw_y));
 
         ++write_count;
       }

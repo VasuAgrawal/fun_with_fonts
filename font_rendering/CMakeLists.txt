@@ -99,6 +99,18 @@ target_link_libraries(OcrDemo PRIVATE
     Iosifovitch
 )
 
+add_executable(OcrStats src/ocr_stats.cpp)
+target_include_directories(OcrStats PRIVATE
+    ${GFLAGS_INCLUDE_DIRS}
+    ${Tesseract_INCLUDE_DIRS}
+)
+target_link_libraries(OcrStats PRIVATE
+    Renderer
+    ${GFLAGS_LIBRARIES}
+    ${Tesseract_LIBRARIES}
+    Iosifovitch
+)
+
 # Things that fall under the test/ folder, rather than in src/
 add_executable(RendererBenchmark test/render_bench.cpp)
 target_link_libraries(RendererBenchmark PRIVATE
