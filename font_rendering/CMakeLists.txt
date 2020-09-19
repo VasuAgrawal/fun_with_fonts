@@ -111,6 +111,18 @@ target_link_libraries(OcrStats PRIVATE
     Iosifovitch
 )
 
+add_executable(MoveByOcr src/move_by_ocr.cpp)
+target_include_directories(MoveByOcr PRIVATE
+    ${GFLAGS_INCLUDE_DIRS}
+    ${Tesseract_INCLUDE_DIRS}
+)
+target_link_libraries(MoveByOcr PRIVATE
+    Renderer
+    ${GFLAGS_LIBRARIES}
+    ${Tesseract_LIBRARIES}
+    Iosifovitch
+)
+
 # Things that fall under the test/ folder, rather than in src/
 add_executable(RendererBenchmark test/render_bench.cpp)
 target_link_libraries(RendererBenchmark PRIVATE

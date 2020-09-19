@@ -38,7 +38,9 @@ int main(int argc, char* argv[]) {
 
   // Initialize OCR
   auto tesseract = std::make_unique<tesseract::TessBaseAPI>();
-  if (tesseract->Init(NULL, "eng")) {
+  const auto tessdata_path = (fs::path(__FILE__).parent_path() / ".." / "data" / "tessdata-best").string();
+  // if (tesseract->Init(NULL, "eng")) {
+  if (tesseract->Init(tessdata_path.c_str(), "eng")) {
     // if (tesseract->Init("/data/fun_with_fonts/font_rendering/data/tessdata",
     // "eng")) { if
     // (tesseract->Init("/data/fun_with_fonts/font_rendering/data/tessdata-best",
@@ -72,9 +74,9 @@ int main(int argc, char* argv[]) {
   const auto atlas = r.getAtlasString();
 
   for (auto& p : fs::recursive_directory_iterator(FLAGS_font_dir)) {
-    if (fs::is_regular_file(p) &&
-        std::find(font_extensions.begin(), font_extensions.end(),
-                  p.path().extension()) != font_extensions.end()) {
+    if (fs::is_regular_file(p)) {
+        // std::find(font_extensions.begin(), font_extensions.end(),
+        //           p.path().extension()) != font_extensions.end()) {
       auto canonical = fs::canonical(p).string();
       // fmt::print("Loading font from: {}\n", canonical);
       r.loadFontFace(canonical);

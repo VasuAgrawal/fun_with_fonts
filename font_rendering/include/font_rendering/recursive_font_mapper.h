@@ -56,9 +56,10 @@ class RecursiveFontMapper {
         break;
       }
 
-      if (!fs::is_regular_file(p) ||
-          std::find(KNOWN_FONT_EXTENSIONS.begin(), KNOWN_FONT_EXTENSIONS.end(),
-                    p.path().extension()) == KNOWN_FONT_EXTENSIONS.end()) {
+      if (!fs::is_regular_file(p)) {
+      // ||
+          // std::find(KNOWN_FONT_EXTENSIONS.begin(), KNOWN_FONT_EXTENSIONS.end(),
+          //           p.path().extension()) == KNOWN_FONT_EXTENSIONS.end()) {
         continue;
       }
 

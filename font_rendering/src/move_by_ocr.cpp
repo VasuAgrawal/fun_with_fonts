@@ -1,3 +1,4 @@
+#include <opencv2/core/cvstd.hpp>
 #include <tesseract/publictypes.h>
 
 #include <filesystem>
@@ -19,6 +20,7 @@ namespace fs = std::filesystem;
 #include "iosifovitch/iosifovitch.hpp"
 
 DEFINE_string(font_dir, "", "Path to font directory");
+DEFINE_string(error_dir, "", "Path to error directory");
 DEFINE_string(atlas, "", "Override atlas");
 DEFINE_int32(dpi, 300, "DPI to use for font rendering");
 DEFINE_int32(point, 12, "Point size for font rendering");
@@ -27,6 +29,7 @@ DEFINE_int32(thread_count, 24, "Number of render threads to use");
 DEFINE_int32(count, 0, "Number of files to stop after");
 DEFINE_bool(lowercase, true, "Use lower case levenshtein distance");
 DEFINE_bool(csv, false, "Output text in CSV format");
+DEFINE_bool(dry_run, false, "Don't actually move any files");
 
 template <typename T>
 class Counter : public std::map<T, T> {  // we care about sorted order
@@ -62,6 +65,11 @@ int main(int argc, char* argv[]) {
     fmt::print("provide a font dir dipshit\n");
     return -1;
   }
+
+  // Make output directory
+  fs::path error_dir(FLAGS_error_dir);
+  error_dir /= "failed_ocr_distance";
+  fs::create_directories(error_dir);
 
   RecursiveFontMapper mapper(FLAGS_thread_count);
 
@@ -156,6 +164,26 @@ int main(int argc, char* argv[]) {
         ++stats.levenshtein[distance];
         ++stats.levenshtein_lowercase[lowercase_distance];
         ++stats.levenshtein_delta[distance - lowercase_distance];
+
+        // Don't perform the move if it's a dry run
+        if (FLAGS_dry_run) {
+          return;
+        }
+
+        const auto selected_distance = 
+          FLAGS_lowercase ? lowercase_distance : distance;
+
+        if (selected_distance == 0) {
+          return;
+        }
+
+        const std::string folder_name = fmt::format("{:03d}", selected_distance);
+        const auto target_dir = error_dir / folder_name;
+        fs::create_directories(target_dir);
+
+        fs::path canonical_path = canonical;
+        const auto target = target_dir / canonical_path.filename();
+        fs::rename(canonical_path, target);
       },
       FLAGS_font_dir, FLAGS_count
 

@@ -45,8 +45,9 @@ int main(int argc, char* argv[]) {
 
   for (auto& p : fs::recursive_directory_iterator(FLAGS_font_dir)) {
     if (fs::is_regular_file(p) &&
-        std::find(KNOWN_FONT_EXTENSIONS.begin(), KNOWN_FONT_EXTENSIONS.end(),
-                  p.path().extension()) != KNOWN_FONT_EXTENSIONS.end()) {
+        true) {
+        // std::find(KNOWN_FONT_EXTENSIONS.begin(), KNOWN_FONT_EXTENSIONS.end(),
+        //           p.path().extension()) != KNOWN_FONT_EXTENSIONS.end()) {
       auto canonical = fs::canonical(p).string();
       // fmt::print("Loading font from: {}\n", canonical);
       r.loadFontFace(canonical);
