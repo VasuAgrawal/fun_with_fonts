@@ -82,10 +82,15 @@ target_link_libraries(ShowAtlas PRIVATE
     ${GFLAGS_LIBRARIES}
 )
 
-# add_executable(RenderAtlas src/render_atlas.cpp)
-# target_include_directories(RenderAtlas PRIVATE ${GFLAGS_INCLUDE_DIRS})
-# target_link_libraries(RenderAtlas PRIVATE Renderer ${GFLAGS_LIBRARIES}
-# ${GLOG_LIBRARIES})
+add_executable(RenderAtlas src/render_atlas.cpp)
+target_include_directories(RenderAtlas PRIVATE
+    ${GFLAGS_INCLUDE_DIRS}
+)
+target_link_libraries(RenderAtlas PRIVATE
+    Renderer
+    ${GFLAGS_LIBRARIES}
+    ${GLOG_LIBRARIES}
+)
 
 add_executable(OcrDemo src/ocr_demo.cpp)
 target_include_directories(OcrDemo PRIVATE
