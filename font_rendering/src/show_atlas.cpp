@@ -16,6 +16,10 @@ DEFINE_bool(errors_only, false, "Show only images with errors");
 DEFINE_string(atlas, "", "Override atlas");
 DEFINE_string(highlight, "", "Highlight characters");
 DEFINE_bool(cells, true, "Put each character in its own cell");
+DEFINE_int32(dpi, 110, "DPI to use for font rendering");
+DEFINE_int32(point, 72, "Point size for font rendering");
+DEFINE_int32(border, RendererSpacing::DEFAULT, "Border for font rendering");
+DEFINE_int32(padding, RendererSpacing::DEFAULT, "Padding for font rendering");
 
 // duplicated from recursive_font_mapper.h
 inline static const std::vector<std::string> KNOWN_FONT_EXTENSIONS{
@@ -28,7 +32,7 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  RendererSpacing spacing;
+  RendererSpacing spacing(FLAGS_dpi, FLAGS_point, FLAGS_border, FLAGS_padding);
   // spacing.atlas_border = 0;
   Renderer r(spacing);
 
