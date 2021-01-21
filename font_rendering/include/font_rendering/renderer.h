@@ -43,7 +43,7 @@ struct RenderStats {
     return font_not_loaded || 
            !char_loads_failed.empty() ||
            out_of_image_bounds_count ||
-           // out_of_cell_bounds_count ||
+           out_of_cell_bounds_count ||
            overwrites ||
            !matched_bitmaps.empty() ||
            !empty_characters.empty();
@@ -84,10 +84,10 @@ struct fmt::formatter<RenderStats> {
                 stats.out_of_image_bounds_count);
     }
 
-    // if (stats.out_of_cell_bounds_count) {
-    //   format_to(ctx.out(), " {} pixels out of cell bounds,",
-    //   stats.out_of_cell_bounds_count);
-    // }
+    if (stats.out_of_cell_bounds_count) {
+      format_to(ctx.out(), " {} pixels out of cell bounds,",
+      stats.out_of_cell_bounds_count);
+    }
 
     if (stats.overwrites) {
       format_to(ctx.out(), " {} pixels overwritten,", stats.overwrites);

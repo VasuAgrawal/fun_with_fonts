@@ -212,12 +212,17 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
   // should be. This is useful since most fonts go a little below the EM box.
   int bottom_offset = spacing_.em / 5;
 
+  // Setting this to anything higher than atlas_border / 2 allows for overlap in
+  // between individual glyphs.
+  int cell_border = spacing_.atlas_border / 2;
+  // int cell_border = 0;
+
   for (int row = 0; const auto& line : user_atlas_) {
     const auto cy = spacing_.atlas_padding +
                     row * (spacing_.em + spacing_.atlas_border) +
                     spacing_.half_em;
-    const auto cell_top = cy - spacing_.half_em - spacing_.atlas_border;
-    const auto cell_bot = cy + spacing_.half_em + spacing_.atlas_border + 1;
+    const auto cell_top = cy - spacing_.half_em - cell_border;
+    const auto cell_bot = cy + spacing_.half_em + cell_border + 1;
     const auto tile_top = cy - spacing_.half_em;
     const auto tile_bot = cy + spacing_.half_em + 1;
 
@@ -333,8 +338,8 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
         }
       }
 
-      const auto cell_left = cx - spacing_.half_em - spacing_.atlas_border;
-      const auto cell_right = cx + spacing_.half_em + spacing_.atlas_border + 1;
+      const auto cell_left = cx - spacing_.half_em - cell_border;
+      const auto cell_right = cx + spacing_.half_em + cell_border + 1;
       const auto tile_left = cx - spacing_.half_em;
       const auto tile_right = cx + spacing_.half_em + 1;
 
@@ -467,11 +472,6 @@ RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
   // Draw the start of the copies
   // cv::circle(mat, cv::Point(start_x, start_y), 3, cv::Scalar(255), 1);
   
-  // Draw a rectangle around the entire cell
-  // cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right,
-  // cell_bot),
-  //     cv::Scalar(255), 2);
-
   for (int y = 0; y < bitmap.rows; ++y) {
     auto draw_y = start_y + y;
     stats.out_of_cell_bounds_count +=
@@ -514,6 +514,11 @@ RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
       }
     }
   }
+
+  // Draw a rectangle around the entire cell
+  cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right,
+  cell_bot),
+      cv::Scalar(255), 1);
 
   // TODO: Update the write count to be based on the pixels in the bitmap,
   // rather than those drawn to screen. There's currently a bug where we'll

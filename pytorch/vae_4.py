@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # coding: utf-8
 
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("-c", "--comment", default="autoencoder",
+        help="Comment to append to folder name")
+args = parser.parse_args()
+
 # In[128]:
 
 
@@ -53,7 +59,7 @@ test_dataset = FlatImageFolder(
         "/data/datasets/fonts/rendered/alphabet_upper_split_05/test/Q", transform)
 print(f"Test dataset has {len(test_dataset)} examples")
 
-test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=1000, shuffle=False, num_workers=10)
+test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=10)
 test_iter = iter(test_loader)
 
 import matplotlib.pyplot as plt
@@ -77,57 +83,73 @@ import torch.nn.functional as F
 # https://www.cs.toronto.edu/~lczhang/360/lec/w05/autoencoder.html
 # https://arxiv.org/pdf/1808.00362.pdf
 class Autoencoder(nn.Module):
+    # Pytorch uses sqrt(5) for the value of a in the kaiming uniform
+    # initialization, so that's what I'm going to do. It seems to provide
+    # significantly faster convergence than using a leak of .2.
+    # https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/conv.py#L112
+    # https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/linear.py#L87
+    RELU_LEAK = 5 ** 0.5
     def __init__(self, hidden):
         super(Autoencoder, self).__init__()
         self.encoder_conv = nn.Sequential(
             nn.Conv2d(1, 16, 3, stride=2, padding=1),
-            nn.LeakyReLU(.2),
+            nn.LeakyReLU(self.RELU_LEAK),
             nn.Conv2d(16, 32, 3, stride=2, padding=1),
-            nn.LeakyReLU(.2),
+            nn.LeakyReLU(self.RELU_LEAK),
             nn.Conv2d(32, 64, 3, stride=2, padding=1),
-            nn.LeakyReLU(.2),
+            nn.LeakyReLU(self.RELU_LEAK),
             nn.Conv2d(64, 128, 3, stride=2, padding=1),
-            nn.LeakyReLU(.2),
-            nn.Conv2d(128, 128, 3, stride=2, padding=1),
-            nn.LeakyReLU(.2),
+            nn.LeakyReLU(self.RELU_LEAK),
+            nn.Conv2d(128, 256, 3, stride=2, padding=1),
+            nn.LeakyReLU(self.RELU_LEAK),
         )
         
         self.encoder_linear = nn.Sequential(
-            nn.Linear(128*2*2, 128),
-            nn.LeakyReLU(.2),
+            nn.Linear(256*2*2, 256),
+            nn.LeakyReLU(self.RELU_LEAK),
         )
         
         self.encoder_mu = nn.Sequential(
-            nn.Linear(128, hidden), # No activation, let it go wherever
+            nn.Linear(256, hidden), # No activation, let it go wherever
         )
 
         self.encoder_log_sigma = nn.Sequential(
-            nn.Linear(128, hidden), # Will be exponentiated later
+            nn.Linear(256, hidden), # Will be exponentiated later
         )
 
         self.decoder_linear = nn.Sequential(
-            nn.Linear(hidden, 128),
-            nn.LeakyReLU(.2),
-            nn.Linear(128, 128*2*2),
-            nn.LeakyReLU(.2),
+            nn.Linear(hidden, 256),
+            nn.LeakyReLU(self.RELU_LEAK),
+            nn.Linear(256, 256*2*2),
+            nn.LeakyReLU(self.RELU_LEAK),
         )
 
         self.decoder_conv = nn.Sequential(
-            nn.ConvTranspose2d(128, 128, 3, stride=2, padding=1, output_padding=1),
-            nn.LeakyReLU(.2),
+            nn.ConvTranspose2d(256, 128, 3, stride=2, padding=1, output_padding=1),
+            nn.LeakyReLU(self.RELU_LEAK),
             nn.ConvTranspose2d(128, 64, 3, stride=2, padding=1, output_padding=1),
-            nn.LeakyReLU(.2),
+            nn.LeakyReLU(self.RELU_LEAK),
             nn.ConvTranspose2d(64, 32, 3, stride=2, padding=1, output_padding=1),
-            nn.LeakyReLU(.2),
+            nn.LeakyReLU(self.RELU_LEAK),
             nn.ConvTranspose2d(32, 16, 3, stride=2, padding=1, output_padding=1),
-            nn.LeakyReLU(.2),
-            nn.ConvTranspose2d(16, 1, 3, stride=2, padding=1, output_padding=1),
+            nn.LeakyReLU(self.RELU_LEAK),
+            nn.ConvTranspose2d(16, 8, 3, stride=2, padding=1, output_padding=1),
+
+            nn.LeakyReLU(self.RELU_LEAK),
+            nn.Conv2d(8, 512, 1),
+
+            nn.LeakyReLU(self.RELU_LEAK),
+            nn.Conv2d(512, 512, 1),
+
+            nn.LeakyReLU(self.RELU_LEAK),
+            nn.Conv2d(512, 1, 1),
+
             nn.Sigmoid() # Can maybe clamp the output instead
         )
         
     def encode(self, x):
         x = self.encoder_conv(x)
-        x = x.view(-1, 128*2*2)
+        x = x.view(-1, 256*2*2)
         x = self.encoder_linear(x)
         mu = self.encoder_mu(x)
         log_sigma = self.encoder_log_sigma(x)
@@ -141,7 +163,7 @@ class Autoencoder(nn.Module):
     
     def decode(self, z):
         x = self.decoder_linear(z)
-        x = x.view(-1, 128, 2, 2)
+        x = x.view(-1, 256, 2, 2)
         x = self.decoder_conv(x)
         return x
 
@@ -152,7 +174,7 @@ class Autoencoder(nn.Module):
         return reconstructed, mu, log_sigma, z
 
 
-net = Autoencoder(32)
+net = Autoencoder(16)
 n, mu, log_sigma, z = net(train_images)
 print("Batch output shape:", n.shape)
 print()
@@ -161,6 +183,8 @@ for i, p in enumerate(net.parameters()):
     print("Parameters", i, p.size())
 print("Trainable parameters:", sum([p.numel() for p in net.parameters()]))
 
+#  import sys
+#  sys.exit()
 
 # In[131]:
 
@@ -184,7 +208,7 @@ import tensorflow as tf
 import tensorboard as tb
 tf.io.gfile = tb.compat.tensorflow_stub.io.gfile
 
-writer = SummaryWriter(comment="_autoencoder")
+writer = SummaryWriter(comment=f"_{args.comment}")
 
 optimizer = optim.Adam(net.parameters(), lr=.001)
 
@@ -192,11 +216,12 @@ criterion = nn.MSELoss(reduction='sum')
 # https://github.com/pytorch/examples/blob/a74badde33f924c2ce5391141b86c40483150d5a/vae/main.py#L73 
 # Reconstruction + KL divergence losses summed over all elements and batch
 def loss_function(x, recon_x, mu, logvar):
-    MSE = criterion(recon_x, x) 
-    MSE /= x.size(0)
+    #  MSE = criterion(recon_x, x) 
+    #  MSE /= x.size(0)
+    size = x.size(1) * x.size(2) * x.size(3)
 
-    #  BCE = F.binary_cross_entropy(recon_x.view(-1, 64*64), x.view(-1, 64*64), reduction='sum')
-    #  BCE /= x.size(0) # Normalize for batch size
+    BCE = F.binary_cross_entropy(recon_x.view(-1, size), x.view(-1, size), reduction='sum')
+    BCE /= x.size(0) # Normalize for batch size
 
     # see Appendix B from VAE paper:
     # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
@@ -205,9 +230,11 @@ def loss_function(x, recon_x, mu, logvar):
     KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
     KLD /= x.size(0) # Normalize for batch size
 
-    #  return BCE + KLD
-    return MSE + KLD
+    return BCE + KLD
+    #  return MSE + KLD
 
+import time
+start = time.time()
 
 global_step = 0
 for epoch in range(3):
@@ -219,7 +246,7 @@ for epoch in range(3):
         
         optimizer.zero_grad()
         train_outputs, train_mu, train_log_sigma, train_z = net(train_inputs)
-        # Loss should be normalized to per-element
+        # Loss should be normalized to per-data-point
         train_loss = loss_function(train_inputs, train_outputs, train_mu, train_log_sigma)
         train_loss.backward()
         optimizer.step()
@@ -236,6 +263,10 @@ for epoch in range(3):
                 # Now run through the full test dataset
                 test_loss = 0
                 test_total = 0
+
+                test_display_inputs = None
+                test_display_outputs = None
+
                 for test_minibatch, test_inputs in enumerate(test_loader):
                     test_inputs = test_inputs.to(device)
     
@@ -245,13 +276,21 @@ for epoch in range(3):
                     test_loss += minibatch_test_loss * test_inputs.size(0)
                     test_total += test_inputs.size(0)
 
+                    if (test_display_inputs is None or 
+                            test_inputs.size(0) >= test_display_inputs.size(0)):
+                        test_display_inputs = test_inputs
+
+                    if (test_display_outputs is None or 
+                            test_outputs.size(0) >= test_display_outputs.size(0)):
+                        test_display_outputs = test_outputs
+
                 test_loss /= test_total # To calculate avg per-element loss
 
                 print("test loss: {:0.5f}".format(test_loss))
                 
                 writer.add_scalar("Loss/test", test_loss.item(), global_step)
-                writer.add_images("Test/inputs", test_inputs[:128], global_step)
-                writer.add_images("Test/outputs", test_outputs[:128], global_step)
+                writer.add_images("Test/inputs", test_display_inputs[:128], global_step)
+                writer.add_images("Test/outputs", test_display_outputs[:128], global_step)
                 writer.add_embedding(test_z, label_img = test_inputs, 
                         global_step=global_step, tag="Test/embedding")
 
@@ -260,6 +299,7 @@ for epoch in range(3):
 
 writer.close()
 
+end = time.time()
             
-print("Finished training!")
+print(f"Finished training in {(end - start):0.2f} seconds!")
 
