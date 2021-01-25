@@ -516,9 +516,9 @@ RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
   }
 
   // Draw a rectangle around the entire cell
-  cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right,
-  cell_bot),
-      cv::Scalar(255), 1);
+  // cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right,
+  // cell_bot),
+  //     cv::Scalar(255), 1);
 
   // TODO: Update the write count to be based on the pixels in the bitmap,
   // rather than those drawn to screen. There's currently a bug where we'll
