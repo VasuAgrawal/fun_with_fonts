@@ -208,10 +208,6 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
   int cont_px = 0;
   int cont_py = 0;
 
-  // How much above the bottom of the cell the theoretical bottom of our drawing
-  // should be. This is useful since most fonts go a little below the EM box.
-  int bottom_offset = spacing_.em / 5;
-
   // Setting this to anything higher than atlas_border / 2 allows for overlap in
   // between individual glyphs.
   int cell_border = spacing_.atlas_border / 2;
@@ -222,13 +218,13 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
                     row * (spacing_.em + spacing_.atlas_border) +
                     spacing_.half_em;
     const auto cell_top = cy - spacing_.half_em - cell_border;
-    const auto cell_bot = cy + spacing_.half_em + cell_border + 1;
+    const auto cell_bot = cy + spacing_.half_em + cell_border;
     const auto tile_top = cy - spacing_.half_em;
-    const auto tile_bot = cy + spacing_.half_em + 1;
+    const auto tile_bot = cy + spacing_.half_em;
 
     // First move the continuous pen to the bottom of the new row, and then move
     // it up a little bit to accommodate things going underneath the line.
-    cont_py = (cell_bot - spacing_.atlas_border) - bottom_offset;
+    cont_py = (cell_bot - spacing_.atlas_border) - spacing_.bottom_offset;
 
     for (int col = 0; const auto& c : line) {
       if (FT_Load_Char(face_, c, FT_LOAD_RENDER)) {
@@ -276,7 +272,7 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
         offset_y = spacing_.half_em - slot->bitmap_top;
 
         px = cx + offset_x;
-        py = cy + offset_y - bottom_offset;
+        py = cy + offset_y - spacing_.bottom_offset;
 
         // px = cx - ((slot->advance.x >> 6) - slot->bitmap_left) / 2;
         // py = cy + spacing_.half_em - slot->bitmap_top;
@@ -339,7 +335,7 @@ std::tuple<cv::Mat, RenderStats> Renderer::renderAtlas(
       }
 
       const auto cell_left = cx - spacing_.half_em - cell_border;
-      const auto cell_right = cx + spacing_.half_em + cell_border + 1;
+      const auto cell_right = cx + spacing_.half_em + cell_border;
       const auto tile_left = cx - spacing_.half_em;
       const auto tile_right = cx + spacing_.half_em + 1;
 
@@ -474,8 +470,8 @@ RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
   
   for (int y = 0; y < bitmap.rows; ++y) {
     auto draw_y = start_y + y;
-    stats.out_of_cell_bounds_count +=
-        (draw_y < cell_top) || (draw_y >= cell_bot);
+    const bool out_of_cell_y = (draw_y < cell_top) || (draw_y >= cell_bot);
+    stats.out_of_cell_bounds_count += out_of_cell_y;
     if (draw_y < 0 || draw_y >= mat.rows) {
       ++stats.out_of_image_bounds_count;
       continue;
@@ -483,12 +479,17 @@ RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
 
     for (int x = 0; x < bitmap.width; ++x) {
       auto draw_x = start_x + x;
-      stats.out_of_cell_bounds_count +=
-          (draw_x < cell_left) || (draw_x >= cell_right);
+      const bool out_of_cell_x = (draw_x < cell_left) || (draw_x >= cell_right);
+      stats.out_of_cell_bounds_count += out_of_cell_x;
       if (draw_x < 0 || draw_x >= mat.cols) {
         ++stats.out_of_image_bounds_count;
         continue;
       }
+
+      // Highlight areas where we fall out of cell bounds
+      // if (out_of_cell_x || out_of_cell_y) {
+      //   mat.at<uint8_t>(draw_y, draw_x) = 128;
+      // }
 
       if (bitmap.buffer[y * bitmap.width + x]) {
         // Add an overwrite count if there's a nonzero pixel at the location
@@ -516,8 +517,8 @@ RenderStats Renderer::drawBitmap(cv::Mat& mat, FT_Bitmap& bitmap, int start_x,
   }
 
   // Draw a rectangle around the entire cell
-  // cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right,
-  // cell_bot),
+  // cv::rectangle(mat, cv::Point(cell_left, cell_top), cv::Point(cell_right-1,
+  // cell_bot-1),
   //     cv::Scalar(255), 1);
 
   // TODO: Update the write count to be based on the pixels in the bitmap,

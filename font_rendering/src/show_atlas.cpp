@@ -20,6 +20,7 @@ DEFINE_int32(dpi, 110, "DPI to use for font rendering");
 DEFINE_int32(point, 72, "Point size for font rendering");
 DEFINE_int32(border, RendererSpacing::DEFAULT, "Border for font rendering");
 DEFINE_int32(padding, RendererSpacing::DEFAULT, "Padding for font rendering");
+DEFINE_int32(offset, RendererSpacing::DEFAULT, "Bottom offset for font rendering");
 
 // duplicated from recursive_font_mapper.h
 inline static const std::vector<std::string> KNOWN_FONT_EXTENSIONS{
@@ -32,7 +33,7 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  RendererSpacing spacing(FLAGS_dpi, FLAGS_point, FLAGS_border, FLAGS_padding);
+  RendererSpacing spacing(FLAGS_dpi, FLAGS_point, FLAGS_border, FLAGS_padding, FLAGS_offset);
   // spacing.atlas_border = 0;
   Renderer r(spacing);
 
@@ -65,7 +66,7 @@ int main(int argc, char* argv[]) {
       }
 
       if (!mat.empty()) {
-        cv::imshow("Rendered", mat);
+        cv::imshow(fmt::format("Rendered: {:d} x {:d}", mat.cols, mat.rows), mat);
         if (cv::waitKey(0) == 'q') {
           break;
         }

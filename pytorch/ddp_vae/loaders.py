@@ -18,6 +18,7 @@ class FlatImageFolder(torch.utils.data.Dataset):
         with open(self._image_paths[idx], "rb") as f:
             img = PIL.Image.open(f)
             img = img.convert("L")
+            img = img.crop((16 * 64, 0, 17 * 64, 64))
 
             return self._transform(img)
 
@@ -25,12 +26,12 @@ class FlatImageFolder(torch.utils.data.Dataset):
 def makeLoaders(train_batch = 64, test_batch = 128):
     transform = transforms.Compose([
         transforms.ToTensor(),
-        transforms.Pad(7),
+        #  transforms.Pad(7),
         #  transforms.Normalize((.1357,), (.3297,)),
     ])
 
     train_dataset = FlatImageFolder(
-        "/data/datasets/fonts/rendered/alphabet_upper_split_05/train/Q",
+        "/data/datasets/fonts/rendered/ocr_line_split_05_val/64/train",
         transform,
     )
 
@@ -44,7 +45,7 @@ def makeLoaders(train_batch = 64, test_batch = 128):
     )
 
     test_dataset = FlatImageFolder(
-        "/data/datasets/fonts/rendered/alphabet_upper_split_05/test/Q",
+        "/data/datasets/fonts/rendered/ocr_line_split_05_val/64/validation",
         transform,
     )
 

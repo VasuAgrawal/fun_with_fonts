@@ -26,7 +26,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.tensorboard import SummaryWriter
 
-from model import Autoencoder
+from model_simple import Autoencoder
 from loaders import makeLoaders
 
 def makeModel(train_loader):
@@ -38,9 +38,10 @@ def makeModel(train_loader):
 
     train_images = next(iter(train_loader))
     train_images = train_images.to(device)
-    print("Encoder output shape:", net.convEncodeShape(train_images))
+    print("Image input shape:        ", train_images.shape)
+    print("Encoder conv output shape:", net.convEncodeShape(train_images))
     n, mu, log_sigma, z = net(train_images)
-    print("Decoder output shape:", n.shape)
+    print("Decoder output shape:     ", n.shape)
     print()
 
     for i, p in enumerate(net.parameters()):
@@ -83,7 +84,7 @@ def loss_function(x, recon_x, mu, logvar):
 def train():
     # setup
     # https://pytorch.org/docs/stable/notes/randomness.html
-    #  torch.set_deterministic(True)
+    torch.set_deterministic(True)
     torch.manual_seed(42)
     torch.backends.cudnn.benchmark = True
 
@@ -91,6 +92,8 @@ def train():
     train_loader, test_loader = makeLoaders()
     net, device = makeModel(train_loader)
 
+    #  return
+    #  
     optimizer = optim.AdamW(net.parameters(), lr=0.001)
     writer = SummaryWriter(comment=f"_{args.comment}")
     #  scaler = torch.cuda.amp.GradScaler()
@@ -98,7 +101,7 @@ def train():
     start = time.time()
 
     global_step = 0
-    for epoch in range(1):
+    for epoch in range(9):
 
         for train_minibatch, train_inputs in enumerate(train_loader):
             global_step += 1

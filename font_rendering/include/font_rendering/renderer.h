@@ -171,9 +171,14 @@ struct RendererSpacing {
   int atlas_border;
   int atlas_padding;
 
+  // How much above the bottom of the cell the theoretical bottom of our drawing
+  // should be. This is useful since most fonts go a little below the EM box.
+  int bottom_offset;
+
   explicit RendererSpacing(int dpi = DEFAULT, int point = DEFAULT,
                            int atlas_border = DEFAULT,
-                           int atlas_padding = DEFAULT)
+                           int atlas_padding = DEFAULT,
+                           int bottom_offset = DEFAULT)
       : dpi(dpi > 0 ? dpi : 110),
         point(point > 0 ? point : 72),
         em(this->point * this->dpi / 72),
@@ -181,7 +186,8 @@ struct RendererSpacing {
         atlas_border(atlas_border >= 0 ? atlas_border : em / 8),
         atlas_padding(atlas_padding >= 0
                           ? atlas_padding
-                          : std::max(em / 2, this->atlas_border)) {}
+                          : std::max(em / 2, this->atlas_border)),
+        bottom_offset(bottom_offset >= 0 ? bottom_offset : em / 5) {}
 };
 
 class Renderer {
