@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import antialiased_cnns
+import torchvision.transforms as transforms
 
 # https://www.cs.toronto.edu/~lczhang/360/lec/w05/autoencoder.html
 # https://arxiv.org/pdf/1808.00362.pdf
@@ -27,6 +27,12 @@ class Autoencoder(nn.Module):
 
     def __init__(self, hidden, input_channels):
         super(Autoencoder, self).__init__()
+        loaded = torch.load(
+           "/data/datasets/fonts/rendered/ocr_line_split_05_val/64/meanstd.pt")
+        self.input_mean = loaded['mean'][:input_channels]
+        self.input_std = loaded['std'][:input_channels]
+        print("Input mean:", self.input_mean)
+        print("Input std: ", self.input_std)
         self.encoder_conv = nn.Sequential(
             nn.Conv2d(input_channels, self.CHANNELS1, 4, stride=2, padding=1),
             nn.LeakyReLU(self.RELU_LEAK),
@@ -125,6 +131,7 @@ class Autoencoder(nn.Module):
         return x
 
     def forward(self, x):
+        x = transforms.Normalize(self.input_mean, self.input_std)(x)
         mu, log_sigma = self.encode(x)
         z = self.reparameterize(mu, log_sigma)
         reconstructed = self.decode(z)

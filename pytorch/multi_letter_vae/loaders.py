@@ -33,6 +33,10 @@ def makeLoaders(train_batch = 64, test_batch = 128, channels = 1):
         transforms.Lambda(
             lambda letters: torch.cat([
                 transforms.ToTensor()(l) for l in letters], 0)),
+        #  transforms.Normalize(
+        #      [0.1222, 0.1541, 0.1076, 0.1491, 0.1232],
+        #      [0.3176, 0.3502, 0.2987, 0.3454, 0.3199],
+        #  )
     ])
 
     train_dataset = FlatImageFolder(

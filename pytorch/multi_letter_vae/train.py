@@ -17,6 +17,13 @@ parser.add_argument(
     type=int,
     help="Number of channels",
 )
+parser.add_argument(
+    "-e",
+    "--epochs",
+    default=3,
+    type=int,
+    help="Number of training epochs",
+)
 args = parser.parse_args()
 
 import time
@@ -109,15 +116,15 @@ def train():
 
     #  return
     
-    optimizer = optim.AdamW(net.parameters(), lr=0.001)
+    optimizer = optim.AdamW(net.parameters(), lr=0.0001)
     writer = SummaryWriter(comment=f"_{args.comment}")
-    #  scaler = torch.cuda.amp.GradScaler()
+    scaler = torch.cuda.amp.GradScaler()
 
     start = time.time()
 
     global_step = 0
-    for epoch in range(9):
-
+    for epoch in range(args.epochs):
+        print(f"Epoch {epoch}")
         for train_minibatch, train_inputs in enumerate(train_loader):
             global_step += 1
 
@@ -127,22 +134,22 @@ def train():
 
             torch.set_grad_enabled(True)
             optimizer.zero_grad()
-            #  with torch.cuda.amp.autocast():
+            with torch.cuda.amp.autocast():
 
             #  with torch.autograd.detect_anomaly():
-            train_outputs, train_mu, train_log_sigma, train_z = net(
-                train_inputs
-            )
-            # Loss should be normalized to per-data-point
-            train_loss = loss_function(
-                train_inputs, train_outputs, train_mu, train_log_sigma
-            )
+                train_outputs, train_mu, train_log_sigma, train_z = net(
+                    train_inputs
+                )
+                # Loss should be normalized to per-data-point
+                train_loss = loss_function(
+                    train_inputs, train_outputs, train_mu, train_log_sigma
+                )
 
-            #  scaler.scale(train_loss).backward()
-            #  scaler.step(optimizer)
-            #  scaler.update()
-            train_loss.backward()
-            optimizer.step()
+            scaler.scale(train_loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+            #  train_loss.backward()
+            #  optimizer.step()
 
             train_end = time.time()
             train_time = train_end - train_start
@@ -178,14 +185,14 @@ def train():
             for test_minibatch, test_inputs in enumerate(test_loader):
                 test_inputs = test_inputs.to(device)
 
-                #  with torch.cuda.amp.autocast():
-                test_outputs, test_mu, test_log_sigma, test_z = net(
-                    test_inputs
-                )
+                with torch.cuda.amp.autocast():
+                    test_outputs, test_mu, test_log_sigma, test_z = net(
+                        test_inputs
+                    )
 
-                minibatch_test_loss = loss_function(
-                    test_inputs, test_outputs, test_mu, test_log_sigma
-                )
+                    minibatch_test_loss = loss_function(
+                        test_inputs, test_outputs, test_mu, test_log_sigma
+                    )
 
                 test_loss += minibatch_test_loss * test_inputs.size(0)
                 test_total += test_inputs.size(0)
