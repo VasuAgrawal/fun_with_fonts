@@ -29,7 +29,7 @@ class FlatImageFolder(torch.utils.data.Dataset):
             return self._transform(letters[: self._channels])
 
 
-def makeLoaders(train_batch=64, test_batch=128, channels=1):
+def makeLoaders(train_batch=64, test_batch=128, channels=1, size=64):
     transform = transforms.Compose(
         [
             transforms.Lambda(
@@ -41,7 +41,7 @@ def makeLoaders(train_batch=64, test_batch=128, channels=1):
     )
 
     train_dataset = FlatImageFolder(
-        "/data/datasets/fonts/rendered/ocr_line_split_05_val/64/train",
+        f"/data/datasets/fonts/rendered/ocr_line_split_05_val/{size}/train",
         transform,
         channels,
     )
@@ -56,7 +56,7 @@ def makeLoaders(train_batch=64, test_batch=128, channels=1):
     )
 
     test_dataset = FlatImageFolder(
-        "/data/datasets/fonts/rendered/ocr_line_split_05_val/64/validation",
+        f"/data/datasets/fonts/rendered/ocr_line_split_05_val/{size}/validation",
         transform,
         channels,
     )
