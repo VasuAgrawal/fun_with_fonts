@@ -24,6 +24,13 @@ parser.add_argument(
     type=int,
     help="Number of training epochs",
 )
+parser.add_argument(
+    "-b",
+    "--buckets",
+    default=2,
+    type=int,
+    help="Number of quantization buckets",
+)
 args = parser.parse_args()
 
 import time
@@ -42,6 +49,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 from model_simple import Autoencoder
 from loaders import makeLoaders
+from quantization import *
 
 def flattenChannels(stacked):
     N, C, H, W = stacked.shape
@@ -52,7 +60,7 @@ def makeModel(train_loader, meanstd):
     # https://pytorch.org/tutorials/beginner/blitz/data_parallel_tutorial.html
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-    net = Autoencoder(16, args.channels, meanstd)
+    net = Autoencoder(16, args.channels, meanstd, args.buckets)
     net.to(device)
 
     train_images = next(iter(train_loader))
@@ -60,11 +68,12 @@ def makeModel(train_loader, meanstd):
     print("Image input shape:        ", train_images.shape)
     print("Encoder conv output shape:", net.convEncodeShape(train_images))
     n, mu, log_sigma, z = net(train_images)
-    print("Decoder output shape:     ", n.shape)
+    for i, ch in enumerate(n):
+        print(f"Decoder {i} output shapes:  ", ch.shape)
     print()
 
     for i, p in enumerate(net.parameters()):
-        print("Parameters", i, p.size())
+        print("Parameters", i, p.numel(), p.size())
     print("Trainable parameters:", sum([p.numel() for p in net.parameters()]))
     print()
 
@@ -114,7 +123,7 @@ def train():
     train_loader, test_loader, meanstd = makeLoaders(channels=args.channels)
     net, device = makeModel(train_loader, meanstd)
 
-    #  return
+    return
     
     optimizer = optim.AdamW(net.parameters(), lr=0.0001)
     writer = SummaryWriter(comment=f"_{args.comment}")

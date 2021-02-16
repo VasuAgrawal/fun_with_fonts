@@ -1,5 +1,6 @@
 import pathlib
 import PIL
+from quantization import *
 
 import torch
 import torchvision

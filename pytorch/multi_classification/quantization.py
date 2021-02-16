@@ -9,10 +9,13 @@ import progressbar
 from loaders import makeLoaders
 from matplotlib import pyplot as plt
 
+
 def quantizeBatch(images, values):
     # Images is a float tensor with [0, 1] values
     # Output is a float tensor with quantized [0, 1] floats
-    return torch.round(images * (values - 1)) / (values - 1)
+    out = torch.round(images * (values - 1)) / (values - 1)
+    assert out.shape == images.shape
+    return out
 
 
 def makeQuantizedLabels(images, values):
@@ -20,7 +23,9 @@ def makeQuantizedLabels(images, values):
     for ch in range(images.size(1)):
         im = images[:, ch, :, :]
         scaled = im * (values - 1)
-        label = torch.zeros(im.size(0), values, im.size(1), im.size(2), dtype=scaled.dtype)
+        label = torch.zeros(
+            im.size(0), values, im.size(1), im.size(2), dtype=scaled.dtype
+        )
         for v in range(values):
             label[:, v, :, :] = scaled == v
         output.append(label)
@@ -29,6 +34,15 @@ def makeQuantizedLabels(images, values):
         assert torch.all(summed == torch.ones_like(summed))
 
     return output
+
+
+def flattenLabels(images, values):
+    # Images is a list of [batch, buckets, height, width]
+    argmax = [
+        torch.unsqueeze(torch.argmax(im, dim=1), 1).float() for im in images
+    ]
+    cat = torch.cat(argmax, dim=1)
+    return cat / (values - 1)
 
 
 def plotQuantizationLoss(loader):
@@ -44,7 +58,7 @@ def plotQuantizationLoss(loader):
             print(values, loss)
 
         plt.plot(x, y)
-        plt.yscale('log')
+        plt.yscale("log")
         plt.show()
 
         break
@@ -55,7 +69,7 @@ def testQuantizedLabels(loader):
     for i, data in enumerate(loader):
         quantized = quantizeBatch(data, buckets)
         labels = makeQuantizedLabels(quantized, buckets)
-    
+
         print("Original image:", data.shape)
         print(data)
 
@@ -85,7 +99,7 @@ def makeGrid(images):
     count = 0
     for y in range(height):
         for x in range(width):
-            output[y * h : (y+1) * h, x * w : (x + 1) * w] = images[count]
+            output[y * h : (y + 1) * h, x * w : (x + 1) * w] = images[count]
             count += 1
 
     return output
@@ -93,55 +107,38 @@ def makeGrid(images):
 
 def plotQuantizedLabels(loader):
 
-    max_buckets = 2
+    max_buckets = 4
     for i, data in enumerate(loader):
         print(f"Showing image {i} channel 0")
-        cv2.imshow("original", data[0, 0, :, :].numpy())
+        cv2.imshow("original", data[0, -1, :, :].numpy())
         #  print(data[0, 0, :, :])
 
         quantized = [quantizeBatch(data, q) for q in range(2, max_buckets + 1)]
-        quantized_grid = makeGrid([im[0, 0, :, :].numpy() for im in quantized])
-        print(f"Showing quantizations from 2 to {max_buckets + 1} buckets ({max_buckets - 1})")
+        quantized_grid = makeGrid([im[0, -1, :, :].numpy() for im in quantized])
+        print(
+            f"Showing quantizations from 2 to {max_buckets + 1} buckets ({max_buckets - 1})"
+        )
         cv2.imshow("quantizations", quantized_grid)
         #  print(quantized[-1][0, 0, :, :])
 
         labels = makeQuantizedLabels(quantized[-1], max_buckets)
-        labels_grid = makeGrid([labels[0][0, i, :, :].numpy()
-            for i in range(max_buckets)])
+        labels_grid = makeGrid(
+            [labels[-1][0, i, :, :].numpy() for i in range(max_buckets)]
+        )
         print(f"Showing labels for {max_buckets} buckets")
         cv2.imshow("labels", labels_grid)
         #  print(labels[-1])
 
-        if cv2.waitKey(0) & 0xFF == ord('q'):
+        flat = flattenLabels(labels, max_buckets)
+        assert quantized[-1].shape == flat.shape
+        assert torch.all(flat == quantized[-1])
+        cv2.imshow("flattened labels", flat[0, -1, :, :].numpy())
+
+        if cv2.waitKey(0) & 0xFF == ord("q"):
             break
 
 
-train_loader, test_loader, meanstd = makeLoaders(1, 1, channels=1, size=128)
+train_loader, test_loader, meanstd = makeLoaders(32, 1, channels=27, size=128)
 #  plotQuantizationLoss(train_loader)
 #  testQuantizedLabels(train_loader)
-plotQuantizedLabels(test_loader)
-
-#  #  for i, data in progressbar.progressbar(train_loader):
-#  for i, data in enumerate(train_loader):
-#  
-#      x = np.array(range(2, 257))
-#      y = np.zeros_like(x, dtype=float)
-#      #  for i, values in progressbar.progressbar(enumerate(x)):
-#      for i, values in enumerate(x):
-#          quantized = quantizeBatch(data, values)
-#          labels = makeQuantizedLabels(quantized, values)
-#          loss = nn.MSELoss()(data, quantized)
-#          #  print(values, loss)
-#          y[i] = loss
-#  
-#          break
-#      break
-#  
-#      for (values, loss) in zip(x, y):
-#          print(values, loss)
-#  
-#      plt.plot(x, y)
-#      plt.yscale('log')
-#      plt.show()
-#  
-#      break
+#  plotQuantizedLabels(test_loader)

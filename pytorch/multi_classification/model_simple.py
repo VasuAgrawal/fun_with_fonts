@@ -25,7 +25,7 @@ class Autoencoder(nn.Module):
     DECODER_FC2 = 128
     DECODER_FC3 = 256
 
-    def __init__(self, hidden, input_channels, meanstd):
+    def __init__(self, hidden, input_channels, meanstd, buckets):
         super(Autoencoder, self).__init__()
         self.input_mean = meanstd['mean'][:input_channels]
         self.input_std = meanstd['std'][:input_channels]
@@ -103,10 +103,17 @@ class Autoencoder(nn.Module):
 
             nn.Conv2d(self.DECODER_FC2, self.DECODER_FC3, 1),
             nn.LeakyReLU(self.RELU_LEAK),
-
-            nn.Conv2d(self.DECODER_FC3, input_channels, 1),
-            #  nn.Sigmoid(),  # Can maybe clamp the output instead
         )
+
+        # Make one decoder head for each input channel. Each head will output an
+        # image with buckets-many channels.
+        self.decoder_heads = nn.ModuleList([
+            nn.Sequential(
+
+                nn.Conv2d(self.DECODER_FC3, buckets, 1),
+                #  nn.Sigmoid(),  # Can maybe clamp the output instead
+            ) for ch in range(input_channels)
+        ])
 
     def encode(self, x):
         x = self.encoder_conv(x)
@@ -126,7 +133,8 @@ class Autoencoder(nn.Module):
         x = self.decoder_linear(z)
         x = x.view(-1, self.CHANNELS5, 2, 2)
         x = self.decoder_conv(x)
-        return x
+        xs = [head(x) for head in self.decoder_heads]
+        return xs
 
     def forward(self, x):
         x = transforms.Normalize(self.input_mean, self.input_std)(x)
