@@ -156,6 +156,7 @@ def train():
 
             writer.add_scalar("Loss/train", train_loss.item(), global_step)
             writer.add_scalar("Train/time", train_time, global_step)
+            writer.add_scalar("Train/epoch", epoch, global_step)
             torch.set_grad_enabled(False)
 
             if global_step % 200 == 0:
