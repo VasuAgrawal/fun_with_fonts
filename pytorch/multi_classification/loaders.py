@@ -8,11 +8,12 @@ import torchvision.transforms as transforms
 
 
 class FlatImageFolder(torch.utils.data.Dataset):
-    def __init__(self, path, transform, channels):
+    def __init__(self, path, transform, channels, buckets):
         self._path = pathlib.Path(path)
         self._transform = transform
         self._image_paths = list(self._path.glob("**/*.pgm"))
         self._channels = channels
+        self._buckets = buckets
 
     def __len__(self):
         return len(self._image_paths)
@@ -27,10 +28,15 @@ class FlatImageFolder(torch.utils.data.Dataset):
                 for i in range(img.size[0] // height)
             ]
 
-            return self._transform(letters[: self._channels])
+            tensored = self._transform(letters[: self._channels])
+            quantized = quantizeBatch(torch.unsqueeze(tensored, 0), self._buckets)
+            labeled = makeQuantizedLabels(quantized, self._buckets)
+            labeled = [torch.squeeze(l, 0) for l in labeled]
+            return tensored, labeled
 
 
-def makeLoaders(train_batch=64, test_batch=128, channels=1, size=64):
+def makeLoaders(train_batch=64, test_batch=128, channels=1, size=64,
+        buckets=2):
     transform = transforms.Compose(
         [
             transforms.Lambda(
@@ -45,6 +51,7 @@ def makeLoaders(train_batch=64, test_batch=128, channels=1, size=64):
         f"/data/datasets/fonts/rendered/ocr_line_split_05_val/{size}/train",
         transform,
         channels,
+        buckets
     )
 
     train_loader = torch.utils.data.DataLoader(
@@ -60,6 +67,7 @@ def makeLoaders(train_batch=64, test_batch=128, channels=1, size=64):
         f"/data/datasets/fonts/rendered/ocr_line_split_05_val/{size}/validation",
         transform,
         channels,
+        buckets
     )
 
     test_loader = torch.utils.data.DataLoader(

@@ -63,9 +63,12 @@ def makeModel(train_loader, meanstd):
     net = Autoencoder(16, args.channels, meanstd, args.buckets)
     net.to(device)
 
-    train_images = next(iter(train_loader))
+    train_images, train_labels = next(iter(train_loader))
     train_images = train_images.to(device)
+    train_labels = [l.to(device) for l in train_labels]
     print("Image input shape:        ", train_images.shape)
+    for i, label in enumerate(train_labels):
+        print(f"Image labels {i:02d} shape:      ", label.shape)
     print("Encoder conv output shape:", net.convEncodeShape(train_images))
     n, mu, log_sigma, z = net(train_images)
     for i, ch in enumerate(n):
@@ -85,46 +88,62 @@ def makeModel(train_loader, meanstd):
     return net, device
 
 
-# https://github.com/pytorch/examples/blob/a74badde33f924c2ce5391141b86c40483150d5a/vae/main.py#L73
-# Reconstruction + KL divergence losses summed over all elements and batch
-def loss_function(x, recon_x, mu, logvar):
-    #  criterion = nn.MSELoss(reduction='sum')
-    #  MSE = criterion(recon_x, x)
-    #  MSE /= x.size(0)
-    size = x.size(1) * x.size(2) * x.size(3)
+#  # https://github.com/pytorch/examples/blob/a74badde33f924c2ce5391141b86c40483150d5a/vae/main.py#L73
+#  # Reconstruction + KL divergence losses summed over all elements and batch
+#  def loss_function(x, recon_x, mu, logvar):
+#      #  criterion = nn.MSELoss(reduction='sum')
+#      #  MSE = criterion(recon_x, x)
+#      #  MSE /= x.size(0)
+#      size = x.size(1) * x.size(2) * x.size(3)
+#  
+#      BCE = F.binary_cross_entropy_with_logits(
+#          recon_x.view(-1, size), x.view(-1, size), reduction="sum"
+#      )
+#      BCE /= x.size(0)  # Normalize for batch size
+#  
+#      # see Appendix B from VAE paper:
+#      # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
+#      # https://arxiv.org/abs/1312.6114
+#      # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+#      KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+#      KLD /= x.size(0)  # Normalize for batch size
+#      #  print(f"KLD: {KLD}")
+#  
+#      loss = (BCE + KLD) / x.shape[1] # Normalize for channel count
+#      return loss
+#  
+#      #  return MSE + KLD
+#  
 
-    BCE = F.binary_cross_entropy_with_logits(
-        recon_x.view(-1, size), x.view(-1, size), reduction="sum"
-    )
-    BCE /= x.size(0)  # Normalize for batch size
-
-    # see Appendix B from VAE paper:
-    # Kingma and Welling. Auto-Encoding Variational Bayes. ICLR, 2014
-    # https://arxiv.org/abs/1312.6114
-    # 0.5 * sum(1 + log(sigma^2) - mu^2 - sigma^2)
+def loss_function(per_ch_labels, recon_x, mu, logvar):
+    batch_size = recon_x[0].size(0)
     KLD = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
-    KLD /= x.size(0)  # Normalize for batch size
-    #  print(f"KLD: {KLD}")
+    KLD /= batch_size  # Normalize for batch size
 
-    loss = (BCE + KLD) / x.shape[1] # Normalize for channel count
+    ch_losses = 0
+    for (target, recon) in zip(per_ch_labels, recon_x):
+        flat_target = torch.argmax(target, dim=1)
+        ch_losses += (torch.nn.CrossEntropyLoss(reduction='sum')(
+            recon, flat_target) / (batch_size))
+
+    loss = (KLD + ch_losses) / args.channels
     return loss
-
-    #  return MSE + KLD
 
 
 def train():
     # setup
     # https://pytorch.org/docs/stable/notes/randomness.html
-    torch.set_deterministic(True)
+    #  torch.set_deterministic(True)
     torch.manual_seed(42)
     torch.backends.cudnn.benchmark = True
 
     # model stuff here
-    train_loader, test_loader, meanstd = makeLoaders(channels=args.channels)
+    train_loader, test_loader, meanstd = makeLoaders(train_batch=32, channels=args.channels,
+            buckets=args.buckets)
     net, device = makeModel(train_loader, meanstd)
 
-    return
-    
+    #  return
+
     optimizer = optim.AdamW(net.parameters(), lr=0.0001)
     writer = SummaryWriter(comment=f"_{args.comment}")
     scaler = torch.cuda.amp.GradScaler()
@@ -134,12 +153,13 @@ def train():
     global_step = 0
     for epoch in range(args.epochs):
         print(f"Epoch {epoch}")
-        for train_minibatch, train_inputs in enumerate(train_loader):
+        for train_minibatch, (train_inputs, train_labels) in enumerate(train_loader):
             global_step += 1
 
             # Training stuff
             train_start = time.time()
             train_inputs = train_inputs.to(device)
+            train_labels = [l.to(device) for l in train_labels]
 
             torch.set_grad_enabled(True)
             optimizer.zero_grad()
@@ -151,7 +171,7 @@ def train():
                 )
                 # Loss should be normalized to per-data-point
                 train_loss = loss_function(
-                    train_inputs, train_outputs, train_mu, train_log_sigma
+                    train_labels, train_outputs, train_mu, train_log_sigma
                 )
 
             scaler.scale(train_loss).backward()
@@ -179,7 +199,14 @@ def train():
                     "Train/inputs", flattenChannels(train_inputs), global_step
                 )
                 writer.add_images(
-                    "Train/outputs", flattenChannels(nn.Sigmoid()(train_outputs)), global_step
+                    "Train/quantized",
+                    flattenChannels(quantizeBatch(train_inputs, args.buckets)),
+                    global_step
+                )
+                writer.add_images(
+                    "Train/outputs", flattenChannels(
+                        flattenLabels(train_outputs, args.buckets)
+                        ), global_step
                 )
 
             # Only test every so often
@@ -191,8 +218,9 @@ def train():
             test_loss = 0
             test_total = 0
 
-            for test_minibatch, test_inputs in enumerate(test_loader):
+            for test_minibatch, (test_inputs, test_labels) in enumerate(test_loader):
                 test_inputs = test_inputs.to(device)
+                test_labels = [l.to(device) for l in test_labels]
 
                 with torch.cuda.amp.autocast():
                     test_outputs, test_mu, test_log_sigma, test_z = net(
@@ -200,7 +228,7 @@ def train():
                     )
 
                     minibatch_test_loss = loss_function(
-                        test_inputs, test_outputs, test_mu, test_log_sigma
+                        test_labels, test_outputs, test_mu, test_log_sigma
                     )
 
                 test_loss += minibatch_test_loss * test_inputs.size(0)
@@ -218,7 +246,14 @@ def train():
                 "Test/inputs", flattenChannels(test_inputs), global_step,
             )
             writer.add_images(
-                "Test/outputs", flattenChannels(nn.Sigmoid()(test_outputs)), global_step,
+                "Test/quantized",
+                flattenChannels(quantizeBatch(test_inputs, args.buckets)),
+                global_step
+            )
+            writer.add_images(
+                "Test/outputs", flattenChannels(
+                    flattenLabels(test_outputs, args.buckets)
+                ), global_step,
             )
             writer.add_scalar(
                 "Test/time", test_end - test_start, global_step

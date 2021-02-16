@@ -101,14 +101,14 @@ class Autoencoder(nn.Module):
             nn.Conv2d(self.DECODER_FC1, self.DECODER_FC2, 1),
             nn.LeakyReLU(self.RELU_LEAK),
 
-            nn.Conv2d(self.DECODER_FC2, self.DECODER_FC3, 1),
-            nn.LeakyReLU(self.RELU_LEAK),
         )
 
         # Make one decoder head for each input channel. Each head will output an
         # image with buckets-many channels.
         self.decoder_heads = nn.ModuleList([
             nn.Sequential(
+                nn.Conv2d(self.DECODER_FC2, self.DECODER_FC3, 1),
+                nn.LeakyReLU(self.RELU_LEAK),
 
                 nn.Conv2d(self.DECODER_FC3, buckets, 1),
                 #  nn.Sigmoid(),  # Can maybe clamp the output instead

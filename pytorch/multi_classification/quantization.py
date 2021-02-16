@@ -6,7 +6,7 @@ import torch.nn as nn
 import numpy as np
 import cv2
 import progressbar
-from loaders import makeLoaders
+#  from loaders import makeLoaders
 from matplotlib import pyplot as plt
 
 
@@ -138,7 +138,7 @@ def plotQuantizedLabels(loader):
             break
 
 
-train_loader, test_loader, meanstd = makeLoaders(32, 1, channels=27, size=128)
+#  train_loader, test_loader, meanstd = makeLoaders(32, 1, channels=27, size=128)
 #  plotQuantizationLoss(train_loader)
 #  testQuantizedLabels(train_loader)
 #  plotQuantizedLabels(test_loader)
