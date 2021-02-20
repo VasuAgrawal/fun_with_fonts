@@ -52,7 +52,7 @@ def makeLoaders(train_batch = 64, test_batch = 128, channels = 1):
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=train_batch,
-        num_workers=8,
+        num_workers=24,
         shuffle=True,
         drop_last=True,
         pin_memory=True,
@@ -67,7 +67,7 @@ def makeLoaders(train_batch = 64, test_batch = 128, channels = 1):
     test_loader = torch.utils.data.DataLoader(
         test_dataset,
         batch_size=test_batch,
-        num_workers=8,
+        num_workers=24,
         shuffle=False,
         pin_memory=True,
         drop_last=True,

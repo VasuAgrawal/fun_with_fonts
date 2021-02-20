@@ -55,7 +55,7 @@ class Autoencoder(pl.LightningModule):
 
     def __init__(self, hidden, input_channels):
         super().__init__()
-        self.lr = 0.0002
+        self.lr = 0.0001
         self.save_hyperparameters()
         loaded = torch.load(
            "/data/datasets/fonts/rendered/ocr_line_split_05_val/64/meanstd.pt")
@@ -200,9 +200,10 @@ class Autoencoder(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         outputs, mu, log_sigma, z = self.forward(batch)
         loss = self.loss_function(batch, outputs, mu, log_sigma)
-        self.log('Loss/train', loss)
+        self.log('Loss/train', loss, sync_dist=True)
 
-        if self.global_step % 200 == 0:
+        # Only log images from the first GPU
+        if self.global_step % 500 == 0 and self.global_rank == 0:
             self.logger.experiment.add_images(
                 'Train/inputs', flattenChannels(batch), self.global_step
             )
@@ -217,9 +218,10 @@ class Autoencoder(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         outputs, mu, log_sigma, z = self.forward(batch)
         loss = self.loss_function(batch, outputs, mu, log_sigma)
-        self.log('Loss/val', loss)
-
-        if batch_idx == 0:
+        self.log('Loss/val', loss, sync_dist=True)
+        
+        # Only log images from the first GPU
+        if batch_idx == 0 and self.global_rank == 0:
             self.logger.experiment.add_images(
                 'Val/inputs', flattenChannels(batch), self.global_step
             )
@@ -235,15 +237,18 @@ class Autoencoder(pl.LightningModule):
         return optimizer
 
 def main():
-    train_loader, val_loader = loaders.makeLoaders(channels=args.channels)
+    train_loader, val_loader = loaders.makeLoaders(
+            train_batch=32,
+            test_batch=32,
+            channels=args.channels)
     net = Autoencoder(args.hidden, args.channels)
 
-    logger = pl.loggers.TensorBoardLogger('ptl', name=args.comment)
+    logger = pl.loggers.TensorBoardLogger('/data/ptl', name=args.comment)
 
     trainer = pl.Trainer.from_argparse_args(
         args,
         logger=logger,
-        callbacks = [EarlyStopping(monitor='Loss/val', min_delta=1)],
+        #  callbacks = [EarlyStopping(monitor='Loss/val', min_delta=1)],
     )
     trainer.fit(net, train_loader, val_loader)
 
